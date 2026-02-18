@@ -9,10 +9,14 @@ DMG_NAME="${DISPLAY_NAME}-${VERSION}.dmg"
 # Build app and create DMG
 "$(dirname "$0")/bundle-app.sh" "${VERSION}"
 
-# Tag, push, and wait for the GitHub release to be created
-echo "Tagging ${TAG} and pushing..."
-git tag "${TAG}"
-git push origin "${TAG}"
+# Tag and push if needed, then wait for the GitHub release
+if git rev-parse "${TAG}" &>/dev/null; then
+    echo "Tag ${TAG} already exists, skipping tagging."
+else
+    echo "Tagging ${TAG} and pushing..."
+    git tag "${TAG}"
+    git push origin "${TAG}"
+fi
 
 echo "Waiting for GitHub release..."
 for i in $(seq 1 30); do
