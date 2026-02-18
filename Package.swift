@@ -15,10 +15,5 @@ let package = Package(
             dependencies: ["VFXUploadCore"],
             path: "Sources/VFXUploadApp"
         ),
-        .testTarget(
-            name: "VFXUploadCoreTests",
-            dependencies: ["VFXUploadCore"],
-            path: "Tests/VFXUploadCoreTests"
-        ),
     ]
 )

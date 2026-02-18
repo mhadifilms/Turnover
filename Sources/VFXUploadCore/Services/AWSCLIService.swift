@@ -198,6 +198,27 @@ public final class AWSCLIService: Sendable {
         onProgress(1.0)
     }
 
+    /// Atomic upload that fails if the key already exists (HTTP 412).
+    /// Uses `s3api put-object --if-none-match` so S3 itself enforces the guard.
+    public func conditionalUploadS3(
+        localPath: URL,
+        bucket: String,
+        key: String,
+        metadata: [String: String] = [:]
+    ) async throws {
+        var args = ["aws", "s3api", "put-object",
+                    "--bucket", bucket,
+                    "--key", key,
+                    "--body", localPath.path,
+                    "--if-none-match", "*",
+                    "--profile", profile]
+        if !metadata.isEmpty {
+            let metaString = metadata.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
+            args += ["--metadata", metaString]
+        }
+        let _ = try await runArray(args)
+    }
+
     /// Returns true if an object exists at the given S3 key.
     public func existsS3(bucket: String, key: String) async -> Bool {
         do {
@@ -224,6 +245,10 @@ public final class AWSCLIService: Sendable {
     /// Runs a CLI command on a background dispatch queue (not the cooperative thread pool)
     /// and drains pipes concurrently with the process to avoid pipe-buffer deadlocks.
     private func run(_ args: String...) async throws -> (stdout: String, stderr: String) {
+        try await runArray(args)
+    }
+
+    private func runArray(_ args: [String]) async throws -> (stdout: String, stderr: String) {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 let process = Process()

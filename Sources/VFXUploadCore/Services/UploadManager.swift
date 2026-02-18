@@ -204,7 +204,7 @@ public final class UploadManager: ObservableObject {
         _ job: UploadJob,
         aws: AWSCLIService
     ) async {
-        await MainActor.run { job.status = .uploading(progress: 0) }
+        await MainActor.run { job.status = .uploading(progress: -1) }
         let (project, fileToUpload, s3Path, colorSpace) = await MainActor.run {
             (job.project, job.fileToUpload, job.s3DestinationPath, job.colorSpace)
         }
@@ -216,24 +216,28 @@ public final class UploadManager: ObservableObject {
             return
         }
 
-        // Never overwrite an existing file on S3
+        // Fast-fail: skip the upload entirely if the key already exists
         if await aws.existsS3(bucket: project.s3Bucket, key: s3Path) {
             await MainActor.run { job.status = .failed("Already exists on S3 — won't overwrite") }
             return
         }
 
+        // Atomic write: S3 returns 412 Precondition Failed if the key was
+        // created between the check above and this put-object call.
         do {
-            try await aws.uploadS3(
+            try await aws.conditionalUploadS3(
                 localPath: fileToUpload,
                 bucket: project.s3Bucket,
                 key: s3Path,
                 metadata: ["color-space": colorSpace.rawValue]
-            ) { progress in
-                Task { @MainActor in
-                    job.status = .uploading(progress: progress)
-                }
-            }
+            )
             await MainActor.run { job.status = .completed }
+        } catch let error as ProcessError {
+            if error.stderr.contains("PreconditionFailed") || error.stderr.contains("412") {
+                await MainActor.run { job.status = .failed("Already exists on S3 — won't overwrite") }
+            } else {
+                await MainActor.run { job.status = .failed(error.localizedDescription) }
+            }
         } catch {
             await MainActor.run { job.status = .failed(error.localizedDescription) }
         }

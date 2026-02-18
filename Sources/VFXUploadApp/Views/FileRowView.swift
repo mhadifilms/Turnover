@@ -8,6 +8,7 @@ struct FileRowView: View {
     @State private var showDeleteConfirmation = false
     @State private var isRenaming = false
     @State private var renameText = ""
+    @State private var showS3Browser = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -38,10 +39,16 @@ struct FileRowView: View {
             }
 
             if case .uploading(let progress) = job.status {
-                ProgressView(value: progress)
-                    .progressViewStyle(.linear)
-                    .accessibilityLabel("Upload progress")
-                    .accessibilityValue("\(Int(progress * 100)) percent")
+                if progress >= 0 {
+                    ProgressView(value: progress)
+                        .progressViewStyle(.linear)
+                        .accessibilityLabel("Upload progress")
+                        .accessibilityValue("\(Int(progress * 100)) percent")
+                } else {
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                        .accessibilityLabel("Upload in progress")
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -128,7 +135,9 @@ struct FileRowView: View {
                     .font(.caption)
                     .foregroundStyle(.teal)
             case .uploading(let progress):
-                Text("Uploading \(job.fileToUpload.lastPathComponent)\u{2026} \(Int(progress * 100))%")
+                Text(progress >= 0
+                     ? "Uploading \(job.fileToUpload.lastPathComponent)\u{2026} \(Int(progress * 100))%"
+                     : "Uploading \(job.fileToUpload.lastPathComponent)\u{2026}")
                     .font(.caption)
                     .foregroundStyle(.blue)
             case .completed:
@@ -178,7 +187,19 @@ struct FileRowView: View {
                 .help("Delete from S3")
                 .accessibilityLabel("Delete \(job.fileName) from S3")
                 .accessibilityHint("Permanently deletes this file")
-            } else if case .failed = job.status {
+            } else if case .failed(let msg) = job.status {
+                if msg.hasPrefix("Path resolution") {
+                    Button {
+                        job.status = .pending
+                        job.isEditing = true
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Edit destination path")
+                    .accessibilityLabel("Edit destination path for \(job.fileName)")
+                }
+
                 Button { appState.removeJob(job) } label: {
                     Image(systemName: "xmark")
                 }
@@ -224,12 +245,33 @@ struct FileRowView: View {
 
                 Spacer()
 
+                if job.project != nil {
+                    Button("Browse S3") { showS3Browser = true }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+
                 Button("Done") { job.isEditing = false }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
             }
         }
         .padding(.top, 4)
+        .sheet(isPresented: $showS3Browser) {
+            if let project = job.project {
+                S3BrowserView(
+                    awsService: appState.awsService,
+                    bucket: project.s3Bucket,
+                    initialPrefix: s3BrowserInitialPrefix(project: project),
+                    initialFilename: s3BrowserInitialFilename(),
+                    onSelect: { path in
+                        job.s3DestinationPath = path
+                        showS3Browser = false
+                    },
+                    onCancel: { showS3Browser = false }
+                )
+            }
+        }
     }
 
     private var renameView: some View {
@@ -257,6 +299,26 @@ struct FileRowView: View {
         guard !newName.isEmpty else { return }
         isRenaming = false
         appState.renameOnS3(job: job, newFileName: newName)
+    }
+
+    private func s3BrowserInitialPrefix(project: Project) -> String {
+        if !job.s3DestinationPath.isEmpty {
+            // Use parent folder of current path
+            let components = job.s3DestinationPath.split(separator: "/", omittingEmptySubsequences: false)
+            if components.count > 1 {
+                return components.dropLast().joined(separator: "/") + "/"
+            }
+        }
+        // Fall back to project base path
+        let base = project.s3BasePath
+        return base.hasSuffix("/") ? base : base + "/"
+    }
+
+    private func s3BrowserInitialFilename() -> String {
+        if !job.s3DestinationPath.isEmpty {
+            return job.s3DestinationPath.split(separator: "/").last.map(String.init) ?? job.fileName
+        }
+        return job.fileName
     }
 
     private func abbreviatedPath(_ path: String) -> String {
