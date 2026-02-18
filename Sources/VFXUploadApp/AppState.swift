@@ -14,13 +14,10 @@ public final class AppState: ObservableObject {
 
     // State
     @Published var dependencyStatus: DependencyStatus = DependencyCheck.check()
+    @Published var projects: [Project] = ProjectStore.load()
     @Published var isDownloadingFFmpeg = false
     @Published var isInstallingAWS = false
     @Published var setupOutput: String = ""
-    @Published var ssoStartURL: String = ""
-    @Published var ssoRegion: String = "us-east-1"
-    @Published var ssoAccountID: String = ""
-    @Published var ssoRoleName: String = ""
     @Published var credentialStatus: AWSCredentialStatus = .expired
     @Published var isCheckingCredentials = false
     @Published var jobs: [UploadJob] = []
@@ -92,7 +89,24 @@ public final class AppState: ObservableObject {
     }
 
     func recheckDependencies() {
+        DependencyCheck.simulateCleanInstall = false
         dependencyStatus = DependencyCheck.check()
+    }
+
+    func reloadProjects() {
+        projects = ProjectStore.load()
+    }
+
+    func importProjects(from url: URL) throws {
+        try ProjectStore.importConfig(from: url)
+        reloadProjects()
+        recheckDependencies()
+    }
+
+    func removeAllProjects() {
+        ProjectStore.removeConfig()
+        reloadProjects()
+        recheckDependencies()
     }
 
     func downloadFFmpeg() {
@@ -126,18 +140,16 @@ public final class AppState: ObservableObject {
         }
     }
 
-    func saveSSOConfig() {
-        do {
-            let config = SSOConfig(
-                startURL: ssoStartURL,
-                region: ssoRegion,
-                accountID: ssoAccountID,
-                roleName: ssoRoleName
-            )
-            try DependencyCheck.writeSSOConfig(config)
-            recheckDependencies()
-        } catch {
-            setupOutput = "Failed to save SSO config: \(error.localizedDescription)"
+    func openSSOConfigInTerminal() {
+        let script = """
+        tell application "Terminal"
+            activate
+            do script "aws configure sso"
+        end tell
+        """
+        if let appleScript = NSAppleScript(source: script) {
+            var error: NSDictionary?
+            appleScript.executeAndReturnError(&error)
         }
     }
 

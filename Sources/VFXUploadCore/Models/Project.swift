@@ -1,13 +1,12 @@
 import Foundation
 
-public struct Project: Identifiable, Hashable, Sendable {
+public struct Project: Identifiable, Hashable, Sendable, Codable {
     public let id: String
     public let displayName: String
     public let s3Bucket: String
     public let s3BasePath: String
     public let episodeNumber: Int
     public let colorSpace: ColorSpace
-    /// Episodes 201-204 use "01_Plates"/"03_VFX"; 205-207 use "Plates"/"VFX"
     public let platesFolder: String
     public let vfxFolder: String
 
@@ -27,25 +26,53 @@ public struct Project: Identifiable, Hashable, Sendable {
     }
 }
 
-public enum ProjectCatalog {
-    private static let bucket = "sync-services"
-    private static let myshowBase = "CLIENTS/Sync_Reed/03_MyShow/MYSHOW_S02"
+public enum ProjectStore {
+    private static var configURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return appSupport.appendingPathComponent("VFXUpload/projects.json")
+    }
 
-    public static let all: [Project] = (201...207).map { ep in
-        let usesNumberedFolders = ep <= 204
-        return Project(
-            id: "myshow_\(ep)",
-            displayName: "MyShow \(ep)",
-            s3Bucket: bucket,
-            s3BasePath: "\(myshowBase)/\(ep)/20_WORKING",
-            episodeNumber: ep,
-            colorSpace: .p3D65PQ,
-            platesFolder: usesNumberedFolders ? "01_Plates" : "Plates",
-            vfxFolder: usesNumberedFolders ? "03_VFX" : "VFX"
-        )
+    public static func load() -> [Project] {
+        guard FileManager.default.fileExists(atPath: configURL.path) else { return [] }
+        do {
+            let data = try Data(contentsOf: configURL)
+            return try JSONDecoder().decode([Project].self, from: data)
+        } catch {
+            return []
+        }
+    }
+
+    public static func save(_ projects: [Project]) {
+        let dir = configURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(projects) else { return }
+        try? data.write(to: configURL)
+    }
+
+    public static func importConfig(from url: URL) throws {
+        let data = try Data(contentsOf: url)
+        // Validate it decodes
+        _ = try JSONDecoder().decode([Project].self, from: data)
+        // Copy to config location
+        let dir = configURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: configURL.path) {
+            try FileManager.default.removeItem(at: configURL)
+        }
+        try data.write(to: configURL)
+    }
+
+    public static func removeConfig() {
+        try? FileManager.default.removeItem(at: configURL)
     }
 
     public static func find(byEpisode episode: Int) -> Project? {
-        all.first { $0.episodeNumber == episode }
+        load().first { $0.episodeNumber == episode }
+    }
+
+    public static func find(byID id: String) -> Project? {
+        load().first { $0.id == id }
     }
 }

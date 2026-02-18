@@ -3,6 +3,7 @@ import VFXUploadCore
 
 struct MenuBarContentView: View {
     @ObservedObject var appState: AppState
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Group {
@@ -18,28 +19,33 @@ struct MenuBarContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbar {
-            ToolbarItem(placement: .automatic) {
+            ToolbarItem(placement: .status) {
+                statusText
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            ToolbarItemGroup(placement: .primaryAction) {
                 if appState.jobs.contains(where: { $0.status == .completed }) {
                     Button("Clear Done") { appState.clearCompleted() }
                 }
-            }
-            ToolbarItem(placement: .status) {
-                if appState.uploadManager.isTagging {
-                    Text("\(appState.uploadManager.completedCount)/\(appState.uploadManager.totalCount) tagged")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if appState.uploadManager.isUploading {
-                    Text("\(appState.uploadManager.completedCount)/\(appState.uploadManager.totalCount) uploaded")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if case .valid(let account) = appState.credentialStatus {
-                    Label(account, systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.green)
+                Button(action: { openSettings() }) {
+                    Label("Settings", systemImage: "gearshape")
                 }
+                .help("Settings\u{2026}")
             }
         }
         .environmentObject(appState)
+    }
+
+    @ViewBuilder
+    private var statusText: some View {
+        if appState.uploadManager.isTagging {
+            Text("\(appState.uploadManager.completedCount)/\(appState.uploadManager.totalCount) tagged")
+        } else if appState.uploadManager.isUploading {
+            Text("\(appState.uploadManager.completedCount)/\(appState.uploadManager.totalCount) uploaded")
+        } else {
+            EmptyView()
+        }
     }
 
     private var mainContent: some View {
@@ -63,17 +69,14 @@ struct MenuBarContentView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.teal)
-                .controlSize(.large)
             } else if appState.canUpload {
                 Button { appState.startUpload() } label: {
                     Label("Upload All", systemImage: "arrow.up.circle.fill")
                 }
                 .buttonStyle(.borderedProminent)
-                .controlSize(.large)
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(.bar)
+        .padding(.vertical, 8)
     }
 }

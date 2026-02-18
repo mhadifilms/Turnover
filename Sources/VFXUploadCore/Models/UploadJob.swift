@@ -50,7 +50,7 @@ public final class UploadJob: ObservableObject, Identifiable {
         self.s3DestinationPath = ""
         self.colorSpace = .p3D65PQ
 
-        if let parsed, let project = ProjectCatalog.find(byEpisode: parsed.episodeNumber) {
+        if let parsed, let project = ProjectStore.find(byEpisode: parsed.episodeNumber) {
             self.project = project
             self.colorSpace = project.colorSpace
         }

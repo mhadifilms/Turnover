@@ -1,6 +1,6 @@
 import Foundation
 
-public enum ColorSpace: String, CaseIterable, Sendable {
+public enum ColorSpace: String, CaseIterable, Sendable, Codable {
     case p3D65PQ = "P3-D65-PQ"
     case rec2020PQ = "Rec2020-PQ"
     case rec709 = "Rec709"

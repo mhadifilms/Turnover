@@ -1,194 +1,119 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import VFXUploadCore
 
 struct SetupView: View {
     @EnvironmentObject var appState: AppState
+    @State private var showProjectImporter = false
+    @State private var importError: String?
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                Image(systemName: "wrench.and.screwdriver")
-                    .font(.system(size: 36))
-                    .foregroundStyle(.secondary)
-
-                Text("First-Run Setup")
-                    .font(.headline)
-
+        Form {
+            Section {
                 Text("Complete these steps to get started.")
-                    .font(.caption)
                     .foregroundStyle(.secondary)
-
-                VStack(spacing: 12) {
-                    ffmpegSection
-                    Divider()
-                    awsCliSection
-                    Divider()
-                    ssoConfigSection
-                }
-
-                if !appState.setupOutput.isEmpty {
-                    outputView
-                }
-            }
-            .padding(24)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - ffmpeg / ffprobe
-
-    private var ffmpegSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader(
-                "ffmpeg & ffprobe",
-                done: appState.dependencyStatus.hasFFmpeg && appState.dependencyStatus.hasFFprobe
-            )
-
-            HStack(spacing: 6) {
-                statusDot(appState.dependencyStatus.hasFFmpeg)
-                Text("ffmpeg")
-                    .font(.caption.monospaced())
-                if let path = appState.dependencyStatus.ffmpegPath {
-                    Text(path).font(.caption2).foregroundStyle(.secondary)
-                }
-                Spacer()
             }
 
-            HStack(spacing: 6) {
-                statusDot(appState.dependencyStatus.hasFFprobe)
-                Text("ffprobe")
-                    .font(.caption.monospaced())
-                if let path = appState.dependencyStatus.ffprobePath {
-                    Text(path).font(.caption2).foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
+            Section("ffmpeg & ffprobe") {
+                depRow("ffmpeg", ok: appState.dependencyStatus.hasFFmpeg, detail: appState.dependencyStatus.ffmpegPath)
+                depRow("ffprobe", ok: appState.dependencyStatus.hasFFprobe, detail: appState.dependencyStatus.ffprobePath)
 
-            if !appState.dependencyStatus.hasFFmpeg || !appState.dependencyStatus.hasFFprobe {
-                if appState.isDownloadingFFmpeg {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Button(action: { appState.downloadFFmpeg() }) {
-                        Label("Download", systemImage: "arrow.down.circle")
+                if !appState.dependencyStatus.hasFFmpeg || !appState.dependencyStatus.hasFFprobe {
+                    if appState.isDownloadingFFmpeg {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Button("Download\u{2026}") { appState.downloadFFmpeg() }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
                 }
             }
-        }
-    }
 
-    // MARK: - AWS CLI
+            Section("AWS CLI") {
+                depRow("aws", ok: appState.dependencyStatus.hasAWS, detail: appState.dependencyStatus.awsPath)
 
-    private var awsCliSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("AWS CLI", done: appState.dependencyStatus.hasAWS)
-
-            HStack(spacing: 6) {
-                statusDot(appState.dependencyStatus.hasAWS)
-                Text("aws")
-                    .font(.caption.monospaced())
-                if let path = appState.dependencyStatus.awsPath {
-                    Text(path).font(.caption2).foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-
-            if !appState.dependencyStatus.hasAWS {
-                if appState.isInstallingAWS {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    HStack(spacing: 8) {
-                        Button(action: { appState.installAWSCLI() }) {
-                            Label("Install", systemImage: "arrow.down.circle")
+                if !appState.dependencyStatus.hasAWS {
+                    if appState.isInstallingAWS {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        HStack {
+                            Button("Install\u{2026}") { appState.installAWSCLI() }
+                            Button("Check Again") { appState.recheckDependencies() }
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-
-                        Button("Check Again") { appState.recheckDependencies() }
-                            .buttonStyle(.plain)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 }
             }
-        }
-    }
 
-    // MARK: - SSO Config
-
-    private var ssoConfigSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("AWS SSO Config", done: appState.dependencyStatus.hasSSOConfig)
-
-            if appState.dependencyStatus.hasSSOConfig {
-                HStack(spacing: 6) {
-                    statusDot(true)
-                    Text("~/.aws/config")
-                        .font(.caption.monospaced())
-                    Text("SSO configured")
-                        .font(.caption2)
+            Section("AWS SSO Config") {
+                if appState.dependencyStatus.hasSSOConfig {
+                    depRow("~/.aws/config", ok: true, detail: "SSO configured")
+                } else {
+                    Text("Run `aws configure sso` in Terminal — just enter your start URL and follow the prompts.")
+                        .font(.callout)
                         .foregroundStyle(.secondary)
-                    Spacer()
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    formField("SSO Start URL", text: $appState.ssoStartURL, placeholder: "https://your-company.awsapps.com/start")
-                    formField("Region", text: $appState.ssoRegion, placeholder: "us-east-1")
-                    formField("Account ID", text: $appState.ssoAccountID, placeholder: "123456789012")
-                    formField("Role Name", text: $appState.ssoRoleName, placeholder: "AdministratorAccess")
 
-                    Button(action: { appState.saveSSOConfig() }) {
-                        Label("Save Config", systemImage: "checkmark.circle")
+                    HStack {
+                        Button("Configure in Terminal\u{2026}") { appState.openSSOConfigInTerminal() }
+                        Button("Check Again") { appState.recheckDependencies() }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .disabled(appState.ssoStartURL.isEmpty || appState.ssoAccountID.isEmpty || appState.ssoRoleName.isEmpty)
                 }
+            }
+
+            Section("Projects") {
+                if appState.projects.isEmpty {
+                    Label("No project config loaded", systemImage: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(appState.projects) { project in
+                        Label(project.displayName, systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                Button("Import Config\u{2026}") { showProjectImporter = true }
+
+                if let error = importError {
+                    Text(error)
+                        .foregroundStyle(.red)
+                }
+            }
+
+            if !appState.setupOutput.isEmpty {
+                Section("Output") {
+                    Text(appState.setupOutput)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .fileImporter(isPresented: $showProjectImporter, allowedContentTypes: [.json]) { result in
+            switch result {
+            case .success(let url):
+                do {
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                    try appState.importProjects(from: url)
+                    importError = nil
+                } catch {
+                    importError = "Import failed: \(error.localizedDescription)"
+                }
+            case .failure(let error):
+                importError = "File picker error: \(error.localizedDescription)"
             }
         }
     }
 
-    // MARK: - Helpers
-
-    private func sectionHeader(_ title: String, done: Bool) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(done ? .green : .secondary)
-            Text(title)
-                .font(.subheadline.bold())
+    private func depRow(_ name: String, ok: Bool, detail: String?) -> some View {
+        LabeledContent {
+            if let detail {
+                Text(detail)
+                    .foregroundStyle(.secondary)
+            }
+        } label: {
+            Label(name, systemImage: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(ok ? .green : .red)
         }
-    }
-
-    private func statusDot(_ ok: Bool) -> some View {
-        Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
-            .foregroundStyle(ok ? .green : .red)
-            .font(.caption)
-    }
-
-    private func formField(_ label: String, text: Binding<String>, placeholder: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            TextField(placeholder, text: text)
-                .textFieldStyle(.roundedBorder)
-                .font(.caption)
-        }
-    }
-
-    private var outputView: some View {
-        ScrollView {
-            Text(appState.setupOutput)
-                .font(.caption2.monospaced())
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
-        }
-        .frame(maxHeight: 100)
-        .background(.quaternary.opacity(0.3))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }

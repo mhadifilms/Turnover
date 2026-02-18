@@ -7,6 +7,7 @@ public struct PersistedJob: Codable, Sendable {
     public let s3DestinationPath: String
     public let colorSpaceRawValue: String
     public let status: PersistedStatus
+    public let projectID: String?
     public let episodeNumber: Int?
     public let failureMessage: String?
     public let muxedFileURL: URL?
@@ -23,6 +24,7 @@ public struct PersistedJob: Codable, Sendable {
         self.fileName = job.fileName
         self.s3DestinationPath = job.s3DestinationPath
         self.colorSpaceRawValue = job.colorSpace.rawValue
+        self.projectID = job.project?.id
         self.episodeNumber = job.parsed?.episodeNumber
 
         self.muxedFileURL = job.muxedFileURL
@@ -49,8 +51,10 @@ public struct PersistedJob: Codable, Sendable {
     public func toUploadJob() -> UploadJob {
         let job = UploadJob(sourceURL: sourceURL, id: id)
 
-        // Restore project from episode number
-        if let ep = episodeNumber, let project = ProjectCatalog.find(byEpisode: ep) {
+        // Restore project: try by ID first, fall back to episode number
+        if let pid = projectID, let project = ProjectStore.find(byID: pid) {
+            job.project = project
+        } else if let ep = episodeNumber, let project = ProjectStore.find(byEpisode: ep) {
             job.project = project
         }
 
@@ -69,8 +73,6 @@ public struct PersistedJob: Codable, Sendable {
         case .completed:
             job.status = .completed
         case .tagged:
-            // If no muxed/tagged temp file survived, re-tag is needed.
-            // Re-tagging is fast and idempotent — safe even if file needs no changes.
             if job.muxedFileURL == nil && job.taggedFileURL == nil {
                 job.status = .pending
             } else {

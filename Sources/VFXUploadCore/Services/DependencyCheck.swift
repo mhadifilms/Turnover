@@ -5,26 +5,14 @@ public struct DependencyStatus: Sendable {
     public let ffprobePath: String?
     public let awsPath: String?
     public let hasSSOConfig: Bool
+    public let hasProjects: Bool
 
     public var hasFFmpeg: Bool { ffmpegPath != nil }
     public var hasFFprobe: Bool { ffprobePath != nil }
     public var hasAWS: Bool { awsPath != nil }
-    public var isReady: Bool { hasFFmpeg && hasFFprobe && hasAWS && hasSSOConfig }
+    public var isReady: Bool { hasFFmpeg && hasFFprobe && hasAWS && hasSSOConfig && hasProjects }
 }
 
-public struct SSOConfig: Sendable {
-    public var startURL: String
-    public var region: String
-    public var accountID: String
-    public var roleName: String
-
-    public init(startURL: String, region: String, accountID: String, roleName: String) {
-        self.startURL = startURL
-        self.region = region
-        self.accountID = accountID
-        self.roleName = roleName
-    }
-}
 
 public enum DependencyCheck {
     /// App-specific bin directory for downloaded tools
@@ -40,18 +28,31 @@ public enum DependencyCheck {
         "/usr/bin",
     ]
 
+    /// Set to `true` to simulate a clean install with nothing configured.
+    public static var simulateCleanInstall = false
+
     public static func check() -> DependencyStatus {
-        DependencyStatus(
+        if simulateCleanInstall {
+            return DependencyStatus(
+                ffmpegPath: nil,
+                ffprobePath: nil,
+                awsPath: nil,
+                hasSSOConfig: false,
+                hasProjects: false
+            )
+        }
+        return DependencyStatus(
             ffmpegPath: findExecutable("ffmpeg"),
             ffprobePath: findExecutable("ffprobe"),
             awsPath: findExecutable("aws"),
-            hasSSOConfig: checkSSOConfig()
+            hasSSOConfig: checkSSOConfig(),
+            hasProjects: !ProjectStore.load().isEmpty
         )
     }
 
     // MARK: - ffmpeg Download
 
-    /// Download static ffmpeg + ffprobe binaries from evermeet.cx to app support bin dir.
+    /// Download static ffmpeg + ffprobe binaries to app support bin dir.
     public static func downloadFFmpeg(onOutput: @Sendable @escaping (String) -> Void) async throws {
         let binDir = appSupportBinDir
         let fm = FileManager.default
@@ -62,7 +63,7 @@ public enum DependencyCheck {
         for tool in ["ffmpeg", "ffprobe"] {
             onOutput("Downloading \(tool)...\n")
 
-            let zipURL = "https://evermeet.cx/ffmpeg/getrelease/\(tool)/zip"
+            let zipURL = "https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/snapshot/\(tool).zip"
             let zipPath = NSTemporaryDirectory() + "\(tool).zip"
 
             // curl download
@@ -204,36 +205,6 @@ public enum DependencyCheck {
             return false
         }
         return contents.contains("sso_start_url")
-    }
-
-    /// Write an SSO-based AWS config to ~/.aws/config. Backs up any existing file first.
-    public static func writeSSOConfig(_ config: SSOConfig) throws {
-        let awsDir = NSHomeDirectory() + "/.aws"
-        let configPath = awsDir + "/config"
-        let fm = FileManager.default
-
-        // Create ~/.aws if needed
-        if !fm.fileExists(atPath: awsDir) {
-            try fm.createDirectory(atPath: awsDir, withIntermediateDirectories: true)
-        }
-
-        // Back up existing config
-        if fm.fileExists(atPath: configPath) {
-            let backupPath = configPath + ".backup-\(Int(Date().timeIntervalSince1970))"
-            try fm.copyItem(atPath: configPath, toPath: backupPath)
-        }
-
-        let configContents = """
-        [default]
-        sso_start_url = \(config.startURL)
-        sso_region = \(config.region)
-        sso_account_id = \(config.accountID)
-        sso_role_name = \(config.roleName)
-        region = \(config.region)
-        output = json
-        """
-
-        try configContents.write(toFile: configPath, atomically: true, encoding: .utf8)
     }
 
     // MARK: - Executable Lookup

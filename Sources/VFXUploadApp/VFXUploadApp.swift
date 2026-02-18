@@ -175,6 +175,7 @@ struct MenuBarDropdown: View {
 
         Button("Choose Files\u{2026}") {
             openWindow(id: "main")
+            NSApp.activate()
             appState.showFilePicker = true
         }
         .keyboardShortcut("n")
@@ -192,7 +193,15 @@ struct MenuBarDropdown: View {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let appState = AppState()
+    let appState: AppState
+
+    override init() {
+        if CommandLine.arguments.contains("--clean-install") {
+            DependencyCheck.simulateCleanInstall = true
+        }
+        self.appState = AppState()
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // No Dock icon — menu bar + window only
