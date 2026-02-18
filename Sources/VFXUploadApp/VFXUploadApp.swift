@@ -7,7 +7,7 @@ struct VFXUploadApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        Window("VFX Upload", id: "main") {
+        Window("Turnover", id: "main") {
             MenuBarContentView(appState: appDelegate.appState)
                 .frame(minWidth: 380, idealWidth: 420, minHeight: 300)
         }
@@ -23,7 +23,7 @@ struct VFXUploadApp: App {
             SettingsView(appState: appDelegate.appState)
         }
 
-        MenuBarExtra("VFX Upload", systemImage: "arrow.up.circle.fill") {
+        MenuBarExtra("Turnover", systemImage: "arrow.up.circle.fill") {
             MenuBarDropdown(appState: appDelegate.appState)
         }
     }
