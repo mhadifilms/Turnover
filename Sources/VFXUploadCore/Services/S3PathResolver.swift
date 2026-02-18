@@ -28,7 +28,7 @@ public actor S3PathResolver {
             throw ResolverError.shotNotFound(parsed.shotPrefix)
         }
 
-        // shotFolder looks like "MyShow_202_103_vubcritical/" or "MYSHOW_205_001_na/"
+        // shotFolder looks like "MyShow_202_103_comp/" or "MYSHOW_205_001_na/"
         let folder = shotFolder.hasSuffix("/") ? String(shotFolder.dropLast()) : shotFolder
         // Use the actual folder name from S3 for the path, but our filename for the uploaded file
         let destKey = "\(project.s3BasePath)/\(folder)/\(project.vfxFolder)/\(parsed.shotPrefix)_\(parsed.suffix)_\(parsed.version).\(parsed.fileExtension)"
