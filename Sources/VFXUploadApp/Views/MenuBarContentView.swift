@@ -6,7 +6,9 @@ struct MenuBarContentView: View {
 
     var body: some View {
         Group {
-            if !appState.isAuthenticated {
+            if !appState.dependencyStatus.isReady {
+                SetupView()
+            } else if !appState.isAuthenticated {
                 CredentialView()
             } else if appState.uploadManager.isTagging || appState.uploadManager.isUploading {
                 UploadProgressView()

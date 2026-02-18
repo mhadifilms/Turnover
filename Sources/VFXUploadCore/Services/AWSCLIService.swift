@@ -198,6 +198,16 @@ public final class AWSCLIService: Sendable {
         onProgress(1.0)
     }
 
+    /// Returns true if an object exists at the given S3 key.
+    public func existsS3(bucket: String, key: String) async -> Bool {
+        do {
+            let _ = try await run("aws", "s3api", "head-object", "--bucket", bucket, "--key", key, "--profile", profile)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     public func deleteS3(bucket: String, key: String) async throws {
         let s3Path = "s3://\(bucket)/\(key)"
         let _ = try await run("aws", "s3", "rm", s3Path, "--profile", profile)

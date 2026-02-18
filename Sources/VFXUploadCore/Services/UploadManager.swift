@@ -195,15 +195,6 @@ public final class UploadManager: ObservableObject {
             return
         }
 
-        // 6. Update S3 key to match the actual file being uploaded
-        if !isOriginal {
-            await MainActor.run {
-                let components = job.s3DestinationPath.split(separator: "/", omittingEmptySubsequences: false)
-                let newKey = components.dropLast().joined(separator: "/") + "/" + fileToUpload.lastPathComponent
-                job.s3DestinationPath = newKey
-            }
-        }
-
         log("[Tag] \(fileName): done → will upload \(fileToUpload.lastPathComponent)")
         await MainActor.run { job.status = .tagged }
     }
@@ -222,6 +213,12 @@ public final class UploadManager: ObservableObject {
 
         guard let project else {
             await MainActor.run { job.status = .failed("No project assigned") }
+            return
+        }
+
+        // Never overwrite an existing file on S3
+        if await aws.existsS3(bucket: project.s3Bucket, key: s3Path) {
+            await MainActor.run { job.status = .failed("Already exists on S3 — won't overwrite") }
             return
         }
 

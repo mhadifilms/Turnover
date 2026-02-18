@@ -195,14 +195,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let appState = AppState()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Ensure the app shows in the Dock and opens its window,
-        // even though a MenuBarExtra is present.
-        NSApp.setActivationPolicy(.regular)
+        // No Dock icon — menu bar + window only
+        NSApp.setActivationPolicy(.accessory)
         NSApp.activate()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        false  // Stay alive as menu bar utility
+        false
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

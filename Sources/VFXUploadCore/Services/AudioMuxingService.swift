@@ -107,10 +107,10 @@ public actor AudioMuxingService {
             let _ = try await runProcess(mergeArgs)
         }
 
-        // Mux video + audio — save next to the original with _muxed suffix
+        // Mux video + audio — save next to the original with _review suffix
         let baseName = sourceURL.deletingPathExtension().lastPathComponent
         let ext = sourceURL.pathExtension
-        let outputURL = sourceURL.deletingLastPathComponent().appendingPathComponent("\(baseName)_muxed.\(ext)")
+        let outputURL = sourceURL.deletingLastPathComponent().appendingPathComponent("\(baseName)_review.\(ext)")
 
         var muxArgs = [
             ffmpeg,
@@ -146,7 +146,7 @@ public actor AudioMuxingService {
         let ffmpeg = findExecutable("ffmpeg")
         let baseName = sourceURL.deletingPathExtension().lastPathComponent
         let ext = sourceURL.pathExtension
-        let outputURL = sourceURL.deletingLastPathComponent().appendingPathComponent("\(baseName)_tagged.\(ext)")
+        let outputURL = sourceURL.deletingLastPathComponent().appendingPathComponent("\(baseName)_review.\(ext)")
 
         var args = [
             ffmpeg,
@@ -165,8 +165,7 @@ public actor AudioMuxingService {
     // MARK: - Private
 
     private func findExecutable(_ name: String) -> String {
-        let paths = ["/opt/homebrew/bin/\(name)", "/usr/local/bin/\(name)", "/usr/bin/\(name)"]
-        return paths.first { FileManager.default.isExecutableFile(atPath: $0) } ?? name
+        DependencyCheck.findExecutable(name) ?? name
     }
 
     private func runProcess(_ args: String...) async throws -> (stdout: String, stderr: String) {

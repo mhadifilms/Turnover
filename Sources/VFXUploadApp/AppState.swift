@@ -13,6 +13,14 @@ public final class AppState: ObservableObject {
     let historyStore = JobHistoryStore()
 
     // State
+    @Published var dependencyStatus: DependencyStatus = DependencyCheck.check()
+    @Published var isDownloadingFFmpeg = false
+    @Published var isInstallingAWS = false
+    @Published var setupOutput: String = ""
+    @Published var ssoStartURL: String = ""
+    @Published var ssoRegion: String = "us-east-1"
+    @Published var ssoAccountID: String = ""
+    @Published var ssoRoleName: String = ""
     @Published var credentialStatus: AWSCredentialStatus = .expired
     @Published var isCheckingCredentials = false
     @Published var jobs: [UploadJob] = []
@@ -81,6 +89,56 @@ public final class AppState: ObservableObject {
         isCheckingCredentials = true
         credentialStatus = await awsService.checkCredentials()
         isCheckingCredentials = false
+    }
+
+    func recheckDependencies() {
+        dependencyStatus = DependencyCheck.check()
+    }
+
+    func downloadFFmpeg() {
+        isDownloadingFFmpeg = true
+        setupOutput = ""
+        Task {
+            do {
+                try await DependencyCheck.downloadFFmpeg { [weak self] text in
+                    Task { @MainActor in self?.setupOutput += text }
+                }
+                recheckDependencies()
+            } catch {
+                setupOutput += "\nDownload failed: \(error.localizedDescription)\n"
+            }
+            isDownloadingFFmpeg = false
+        }
+    }
+
+    func installAWSCLI() {
+        isInstallingAWS = true
+        setupOutput = ""
+        Task {
+            do {
+                try await DependencyCheck.installAWSCLI { [weak self] text in
+                    Task { @MainActor in self?.setupOutput += text }
+                }
+            } catch {
+                setupOutput += "\nInstall failed: \(error.localizedDescription)\n"
+            }
+            isInstallingAWS = false
+        }
+    }
+
+    func saveSSOConfig() {
+        do {
+            let config = SSOConfig(
+                startURL: ssoStartURL,
+                region: ssoRegion,
+                accountID: ssoAccountID,
+                roleName: ssoRoleName
+            )
+            try DependencyCheck.writeSSOConfig(config)
+            recheckDependencies()
+        } catch {
+            setupOutput = "Failed to save SSO config: \(error.localizedDescription)"
+        }
     }
 
     func ssoLogin() {
