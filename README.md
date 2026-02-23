@@ -23,7 +23,7 @@ A macOS menu bar utility for VFX artists to upload renders to S3 with automatic 
 
 1. Build and run:
    ```
-   swift run VFXUploadApp
+   swift run TurnoverApp
    ```
 2. Follow the first-run setup to install dependencies and configure AWS SSO.
 3. Import a project config JSON when prompted.
@@ -47,7 +47,7 @@ Projects are defined in a JSON file that gets imported into the app. Example:
 ]
 ```
 
-Import via **Settings > Projects > Import Config** or during first-run setup.
+Paste the JSON directly into the editor in **Settings** and click Save.
 
 ## Bundling
 
@@ -55,7 +55,7 @@ To create a `.app` bundle:
 
 ```
 ./Scripts/bundle-app.sh
-cp -r VFXUpload.app /Applications/
+cp -r Turnover.app /Applications/
 ```
 
 ## Development
@@ -63,5 +63,5 @@ cp -r VFXUpload.app /Applications/
 ```
 swift build          # debug build
 swift test           # run tests
-swift run VFXUploadApp -- --clean-install   # simulate first-run setup
+swift run TurnoverApp -- --clean-install   # simulate first-run setup
 ```

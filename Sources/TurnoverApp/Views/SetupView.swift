@@ -1,11 +1,8 @@
 import SwiftUI
-import UniformTypeIdentifiers
-import VFXUploadCore
+import TurnoverCore
 
 struct SetupView: View {
     @EnvironmentObject var appState: AppState
-    @State private var showProjectImporter = false
-    @State private var importError: String?
 
     var body: some View {
         Form {
@@ -60,19 +57,16 @@ struct SetupView: View {
             }
 
             Section("Projects") {
-                if appState.projects.isEmpty {
-                    Label("No project config loaded", systemImage: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(appState.projects) { project in
-                        Label(project.displayName, systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    }
+                TextEditor(text: $appState.configText)
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(minHeight: 120)
+                    .scrollContentBackground(.hidden)
+
+                Button("Save") {
+                    appState.saveConfigText()
                 }
 
-                Button("Import Config\u{2026}") { showProjectImporter = true }
-
-                if let error = importError {
+                if let error = appState.configError {
                     Text(error)
                         .foregroundStyle(.red)
                 }
@@ -88,21 +82,6 @@ struct SetupView: View {
             }
         }
         .formStyle(.grouped)
-        .fileImporter(isPresented: $showProjectImporter, allowedContentTypes: [.json]) { result in
-            switch result {
-            case .success(let url):
-                do {
-                    let accessing = url.startAccessingSecurityScopedResource()
-                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                    try appState.importProjects(from: url)
-                    importError = nil
-                } catch {
-                    importError = "Import failed: \(error.localizedDescription)"
-                }
-            case .failure(let error):
-                importError = "File picker error: \(error.localizedDescription)"
-            }
-        }
     }
 
     private func depRow(_ name: String, ok: Bool, detail: String?) -> some View {

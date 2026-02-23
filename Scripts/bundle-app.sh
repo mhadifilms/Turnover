@@ -3,7 +3,7 @@ set -euo pipefail
 
 VERSION="${1:-dev}"
 
-APP_NAME="VFXUpload"
+APP_NAME="Turnover"
 DISPLAY_NAME="Turnover"
 BUILD_DIR=".build/release"
 APP_BUNDLE="${DISPLAY_NAME}.app"
@@ -18,7 +18,7 @@ echo "Creating app bundle..."
 rm -rf "${APP_BUNDLE}"
 mkdir -p "${MACOS}" "${CONTENTS}/Resources"
 
-cp "${BUILD_DIR}/VFXUploadApp" "${MACOS}/${APP_NAME}"
+cp "${BUILD_DIR}/TurnoverApp" "${MACOS}/${APP_NAME}"
 
 cat > "${CONTENTS}/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>

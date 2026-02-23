@@ -1,7 +1,7 @@
 import SwiftUI
 import Combine
 import AppKit
-import VFXUploadCore
+import TurnoverCore
 
 @MainActor
 public final class AppState: ObservableObject {
@@ -15,6 +15,8 @@ public final class AppState: ObservableObject {
     // State
     @Published var dependencyStatus: DependencyStatus = DependencyCheck.check()
     @Published var projects: [Project] = ProjectStore.load()
+    @Published var configText: String = ProjectStore.loadText()
+    @Published var configError: String?
     @Published var isDownloadingFFmpeg = false
     @Published var isInstallingAWS = false
     @Published var setupOutput: String = ""
@@ -22,6 +24,7 @@ public final class AppState: ObservableObject {
     @Published var isCheckingCredentials = false
     @Published var jobs: [UploadJob] = []
     @AppStorage("defaultColorSpace") private var colorSpaceRawValue: String = ColorSpace.p3D65PQ.rawValue
+    @AppStorage("enableAudioMuxing") var enableAudioMuxing: Bool = true
     @Published var showFilePicker = false
     @Published var ssoError: String?
 
@@ -95,12 +98,19 @@ public final class AppState: ObservableObject {
 
     func reloadProjects() {
         projects = ProjectStore.load()
+        configText = ProjectStore.loadText()
+        configError = nil
     }
 
-    func importProjects(from url: URL) throws {
-        try ProjectStore.importConfig(from: url)
-        reloadProjects()
-        recheckDependencies()
+    func saveConfigText() {
+        do {
+            try ProjectStore.saveText(configText)
+            projects = ProjectStore.load()
+            configText = ProjectStore.loadText()
+            configError = nil
+        } catch {
+            configError = error.localizedDescription
+        }
     }
 
     func removeAllProjects() {
@@ -199,7 +209,7 @@ public final class AppState: ObservableObject {
     }
 
     func startTagging() {
-        Task { await uploadManager.tagAll(jobs: jobs) }
+        Task { await uploadManager.tagAll(jobs: jobs, enableAudioMuxing: enableAudioMuxing) }
     }
 
     func startUpload() {

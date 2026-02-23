@@ -1,9 +1,9 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import VFXUploadCore
+import TurnoverCore
 
 @main
-struct VFXUploadApp: App {
+struct TurnoverApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {

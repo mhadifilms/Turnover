@@ -1,6 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import VFXUploadCore
+import TurnoverCore
 
 struct DropZoneView: View {
     @EnvironmentObject var appState: AppState

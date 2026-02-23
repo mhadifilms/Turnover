@@ -1,5 +1,5 @@
 import SwiftUI
-import VFXUploadCore
+import TurnoverCore
 
 struct FileRowView: View {
     @EnvironmentObject var appState: AppState

@@ -29,7 +29,7 @@ public final class UploadManager: ObservableObject {
 
     // MARK: - Tag All
 
-    public func tagAll(jobs: [UploadJob]) async {
+    public func tagAll(jobs: [UploadJob], enableAudioMuxing: Bool = true) async {
         let pendingJobs = jobs.filter {
             if case .pending = $0.status, !$0.s3DestinationPath.isEmpty { return true }
             return false
@@ -53,7 +53,7 @@ public final class UploadManager: ObservableObject {
                     running += 1
 
                     group.addTask {
-                        await Self.tagJob(job, audioMuxer: audioMuxer)
+                        await Self.tagJob(job, audioMuxer: audioMuxer, enableAudioMuxing: enableAudioMuxing)
                     }
                 }
 
@@ -127,7 +127,8 @@ public final class UploadManager: ObservableObject {
     /// Probe + audio mux + color tag, then set status to .tagged
     nonisolated private static func tagJob(
         _ job: UploadJob,
-        audioMuxer: AudioMuxingService
+        audioMuxer: AudioMuxingService,
+        enableAudioMuxing: Bool
     ) async {
         let fileName = await MainActor.run { job.fileName }
 
@@ -143,25 +144,29 @@ public final class UploadManager: ObservableObject {
         log("[Tag] \(fileName): needsColorTag=\(needsColorTag), targetColorSpace=\(colorSpace.rawValue)")
 
         // 3. Audio mux (piggybacks color flags if both needed)
-        await MainActor.run { job.status = .muxingAudio }
         var didMux = false
         var muxError: String?
-        do {
-            if let muxedURL = try await audioMuxer.muxAudioIfNeeded(
-                job: job,
-                probeResult: probeResult,
-                colorFlags: needsColorTag ? colorFlags : nil
-            ) {
-                await MainActor.run { job.muxedFileURL = muxedURL }
-                didMux = true
-                log("[Tag] \(fileName): muxed → \(muxedURL.lastPathComponent)")
-            } else {
-                log("[Tag] \(fileName): mux skipped (returned nil)")
+        if enableAudioMuxing {
+            await MainActor.run { job.status = .muxingAudio }
+            do {
+                if let muxedURL = try await audioMuxer.muxAudioIfNeeded(
+                    job: job,
+                    probeResult: probeResult,
+                    colorFlags: needsColorTag ? colorFlags : nil
+                ) {
+                    await MainActor.run { job.muxedFileURL = muxedURL }
+                    didMux = true
+                    log("[Tag] \(fileName): muxed → \(muxedURL.lastPathComponent)")
+                } else {
+                    log("[Tag] \(fileName): mux skipped (returned nil)")
+                }
+            } catch {
+                muxError = error.localizedDescription
+                log("[Tag] \(fileName): mux FAILED → \(error.localizedDescription)")
+                await MainActor.run { job.muxedFileURL = nil }
             }
-        } catch {
-            muxError = error.localizedDescription
-            log("[Tag] \(fileName): mux FAILED → \(error.localizedDescription)")
-            await MainActor.run { job.muxedFileURL = nil }
+        } else {
+            log("[Tag] \(fileName): audio mux disabled by user")
         }
 
         // 4. Standalone color tagging if needed and audio mux didn't happen

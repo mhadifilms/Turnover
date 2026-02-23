@@ -1,5 +1,5 @@
 import SwiftUI
-import VFXUploadCore
+import TurnoverCore
 
 struct FileListView: View {
     @EnvironmentObject var appState: AppState

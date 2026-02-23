@@ -3,17 +3,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "VFXUpload",
+    name: "Turnover",
     platforms: [.macOS(.v14)],
     targets: [
         .target(
-            name: "VFXUploadCore",
-            path: "Sources/VFXUploadCore"
+            name: "TurnoverCore",
+            path: "Sources/TurnoverCore"
         ),
         .executableTarget(
-            name: "VFXUploadApp",
-            dependencies: ["VFXUploadCore"],
-            path: "Sources/VFXUploadApp"
+            name: "TurnoverApp",
+            dependencies: ["TurnoverCore"],
+            path: "Sources/TurnoverApp"
         ),
     ]
 )

@@ -1,5 +1,5 @@
 import SwiftUI
-import VFXUploadCore
+import TurnoverCore
 
 struct ProjectPickerView: View {
     @EnvironmentObject var appState: AppState

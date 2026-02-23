@@ -64,6 +64,29 @@ public enum ProjectStore {
         try data.write(to: configURL)
     }
 
+    public static func loadText() -> String {
+        guard FileManager.default.fileExists(atPath: configURL.path),
+              let data = try? Data(contentsOf: configURL),
+              let text = String(data: data, encoding: .utf8) else {
+            return "[]"
+        }
+        return text
+    }
+
+    public static func saveText(_ text: String) throws {
+        let data = Data(text.utf8)
+        // Validate it decodes
+        _ = try JSONDecoder().decode([Project].self, from: data)
+        // Re-encode pretty-printed for consistent formatting
+        let projects = try JSONDecoder().decode([Project].self, from: data)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let pretty = try encoder.encode(projects)
+        let dir = configURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try pretty.write(to: configURL)
+    }
+
     public static func removeConfig() {
         try? FileManager.default.removeItem(at: configURL)
     }

@@ -1,5 +1,5 @@
 import SwiftUI
-import VFXUploadCore
+import TurnoverCore
 
 struct S3BrowserView: View {
     let awsService: AWSCLIService

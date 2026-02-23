@@ -1,5 +1,5 @@
 import SwiftUI
-import VFXUploadCore
+import TurnoverCore
 
 struct MenuBarContentView: View {
     @ObservedObject var appState: AppState
