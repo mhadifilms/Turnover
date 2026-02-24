@@ -45,14 +45,67 @@ cat > "${CONTENTS}/Info.plist" << PLIST
 </plist>
 PLIST
 
+echo "Ad-hoc signing app bundle..."
+codesign --force --deep -s - "${APP_BUNDLE}"
+
 echo "Created ${APP_BUNDLE}"
 
 echo "Creating DMG..."
 rm -f "${DMG_NAME}"
+
+DMG_STAGING="dmg_staging"
+DMG_TEMP="${DISPLAY_NAME}-temp.dmg"
+
+rm -rf "${DMG_STAGING}"
+mkdir -p "${DMG_STAGING}"
+cp -R "${APP_BUNDLE}" "${DMG_STAGING}/"
+xattr -cr "${DMG_STAGING}/${APP_BUNDLE}"
+ln -s /Applications "${DMG_STAGING}/Applications"
+
+# Create a read-write DMG so we can style it
 hdiutil create -volname "${DISPLAY_NAME}" \
-    -srcfolder "${APP_BUNDLE}" \
-    -ov -format UDZO \
-    "${DMG_NAME}"
+    -srcfolder "${DMG_STAGING}" \
+    -ov -format UDRW \
+    "${DMG_TEMP}"
+
+# Mount the DMG
+MOUNT_DIR=$(hdiutil attach -readwrite -noverify "${DMG_TEMP}" | grep "/Volumes/" | awk -F'\t' '{print $NF}')
+echo "Mounted at: ${MOUNT_DIR}"
+
+# Style the Finder window with AppleScript
+osascript <<APPLESCRIPT
+tell application "Finder"
+    tell disk "${DISPLAY_NAME}"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set the bounds of container window to {200, 200, 720, 500}
+        set viewOptions to the icon view options of container window
+        set arrangement of viewOptions to not arranged
+        set icon size of viewOptions to 96
+        set position of item "${DISPLAY_NAME}.app" of container window to {130, 140}
+        set position of item "Applications" of container window to {390, 140}
+        close
+        open
+        update without registering applications
+        delay 1
+        close
+    end tell
+end tell
+APPLESCRIPT
+
+# Ensure .DS_Store is written to disk
+sync
+
+# Unmount the DMG
+hdiutil detach "${MOUNT_DIR}"
+
+# Convert to compressed read-only DMG
+hdiutil convert "${DMG_TEMP}" -format UDZO -o "${DMG_NAME}"
+
+# Clean up
+rm -f "${DMG_TEMP}"
+rm -rf "${DMG_STAGING}"
 
 echo "Created ${DMG_NAME}"
-echo "To install: open ${DMG_NAME} and drag ${DISPLAY_NAME}.app to /Applications/"
