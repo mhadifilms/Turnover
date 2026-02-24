@@ -238,8 +238,16 @@ public final class AppState: ObservableObject {
 
     func renameOnS3(job: UploadJob, newFileName: String) {
         guard let project = job.project, !job.s3DestinationPath.isEmpty else { return }
+        // Validate filename: no path separators or traversal
+        guard !newFileName.isEmpty,
+              !newFileName.contains("/"),
+              !newFileName.contains("\\"),
+              !newFileName.contains(".."),
+              !newFileName.hasPrefix(".") else {
+            job.status = .failed("Invalid filename")
+            return
+        }
         let oldKey = job.s3DestinationPath
-        // Replace the last path component with the new filename
         let components = oldKey.split(separator: "/", omittingEmptySubsequences: false)
         let newKey = components.dropLast().joined(separator: "/") + "/" + newFileName
         guard newKey != oldKey else { return }

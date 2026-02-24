@@ -81,15 +81,17 @@ public actor AudioMuxingService {
 
         // If there's a merged stem, use it directly. Otherwise download all stems and mix them.
         if let mergedWav = wavFiles.first(where: { $0.lowercased().contains("merged") }) {
+            let safeName = URL(fileURLWithPath: mergedWav).lastPathComponent
             let wavKey = "\(project.s3BasePath)/\(shotFolder)/\(project.platesFolder)/\(mergedWav)"
-            localAudio = tempDir.appendingPathComponent(mergedWav)
+            localAudio = tempDir.appendingPathComponent(safeName)
             try await aws.downloadS3(bucket: project.s3Bucket, key: wavKey, to: localAudio)
         } else {
             // Download all stems and merge with ffmpeg amix
             var localWavs: [URL] = []
             for wav in wavFiles {
+                let safeName = URL(fileURLWithPath: wav).lastPathComponent
                 let wavKey = "\(project.s3BasePath)/\(shotFolder)/\(project.platesFolder)/\(wav)"
-                let localWav = tempDir.appendingPathComponent(wav)
+                let localWav = tempDir.appendingPathComponent(safeName)
                 try await aws.downloadS3(bucket: project.s3Bucket, key: wavKey, to: localWav)
                 localWavs.append(localWav)
             }

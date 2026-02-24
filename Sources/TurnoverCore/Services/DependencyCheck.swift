@@ -31,6 +31,17 @@ public enum DependencyCheck {
     /// Set to `true` to simulate a clean install with nothing configured.
     public static var simulateCleanInstall = false
 
+    /// Detect CPU architecture at runtime for correct binary downloads.
+    private static var cpuArchitecture: String {
+        var sysinfo = utsname()
+        uname(&sysinfo)
+        return withUnsafePointer(to: &sysinfo.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 1) {
+                String(cString: $0)
+            }
+        }
+    }
+
     public static func check() -> DependencyStatus {
         if simulateCleanInstall {
             return DependencyStatus(
@@ -60,16 +71,21 @@ public enum DependencyCheck {
             try fm.createDirectory(atPath: binDir, withIntermediateDirectories: true)
         }
 
+        let arch = cpuArchitecture
+        let downloadArch = arch == "x86_64" ? "amd64" : "arm64"
+
         for tool in ["ffmpeg", "ffprobe"] {
-            onOutput("Downloading \(tool)...\n")
+            onOutput("Downloading \(tool) (\(arch))...\n")
 
-            let zipURL = "https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/snapshot/\(tool).zip"
-            let zipPath = NSTemporaryDirectory() + "\(tool).zip"
+            let zipURL = "https://ffmpeg.martin-riedl.de/redirect/latest/macos/\(downloadArch)/snapshot/\(tool).zip"
+            let zipPath = fm.temporaryDirectory.appendingPathComponent("\(tool)-\(UUID().uuidString).zip").path
 
-            // curl download
+            defer { try? fm.removeItem(atPath: zipPath) }
+
+            // curl download with -f to fail on HTTP errors
             let curlProcess = Process()
             curlProcess.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-            curlProcess.arguments = ["-L", "-o", zipPath, zipURL]
+            curlProcess.arguments = ["-fL", "--tlsv1.2", "-o", zipPath, zipURL]
 
             let curlPipe = Pipe()
             curlProcess.standardError = curlPipe
@@ -101,11 +117,18 @@ public enum DependencyCheck {
                 }
             }
 
-            // unzip
+            // Verify the downloaded file is a valid zip (check magic bytes)
+            guard let zipData = fm.contents(atPath: zipPath),
+                  zipData.count > 4,
+                  zipData[0] == 0x50, zipData[1] == 0x4B else {
+                throw DependencyError.installFailed("Downloaded \(tool) file is not a valid zip archive")
+            }
+
+            // unzip — only extract the tool binary, not arbitrary paths
             onOutput("Extracting \(tool)...\n")
             let unzipProcess = Process()
             unzipProcess.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-            unzipProcess.arguments = ["-o", zipPath, "-d", binDir]
+            unzipProcess.arguments = ["-o", zipPath, tool, "-d", binDir]
             unzipProcess.standardOutput = FileHandle.nullDevice
             unzipProcess.standardError = FileHandle.nullDevice
 
@@ -124,16 +147,31 @@ public enum DependencyCheck {
                 }
             }
 
-            // chmod +x
             let toolPath = "\(binDir)/\(tool)"
+
+            // Remove quarantine attribute so Gatekeeper doesn't block execution
+            let xattrProcess = Process()
+            xattrProcess.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+            xattrProcess.arguments = ["-d", "com.apple.quarantine", toolPath]
+            xattrProcess.standardOutput = FileHandle.nullDevice
+            xattrProcess.standardError = FileHandle.nullDevice
+            try? xattrProcess.run()
+            xattrProcess.waitUntilExit()
+
+            // chmod +x and verify
             let chmodProcess = Process()
             chmodProcess.executableURL = URL(fileURLWithPath: "/bin/chmod")
             chmodProcess.arguments = ["+x", toolPath]
             try chmodProcess.run()
             chmodProcess.waitUntilExit()
+            guard chmodProcess.terminationStatus == 0 else {
+                throw DependencyError.installFailed("Failed to make \(tool) executable")
+            }
 
-            // cleanup zip
-            try? fm.removeItem(atPath: zipPath)
+            // Verify the binary is actually executable
+            guard fm.isExecutableFile(atPath: toolPath) else {
+                throw DependencyError.installFailed("\(tool) is not executable after chmod")
+            }
 
             onOutput("\(tool) installed to \(toolPath)\n")
         }
@@ -145,14 +183,17 @@ public enum DependencyCheck {
 
     /// Download the AWS CLI v2 macOS pkg and open it for the user to install.
     public static func installAWSCLI(onOutput: @Sendable @escaping (String) -> Void) async throws {
+        let fm = FileManager.default
         let pkgURL = "https://awscli.amazonaws.com/AWSCLIV2.pkg"
-        let pkgPath = NSTemporaryDirectory() + "AWSCLIV2.pkg"
+        let pkgPath = fm.temporaryDirectory.appendingPathComponent("AWSCLIV2-\(UUID().uuidString).pkg").path
+
+        defer { try? fm.removeItem(atPath: pkgPath) }
 
         onOutput("Downloading AWS CLI installer...\n")
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        process.arguments = ["-L", "-o", pkgPath, pkgURL]
+        process.arguments = ["-fL", "--tlsv1.2", "-o", pkgPath, pkgURL]
 
         let pipe = Pipe()
         process.standardError = pipe
@@ -186,12 +227,14 @@ public enum DependencyCheck {
 
         onOutput("Opening installer...\n")
 
-        // Open the pkg installer for the user
         let openProcess = Process()
         openProcess.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         openProcess.arguments = [pkgPath]
         try openProcess.run()
         openProcess.waitUntilExit()
+        guard openProcess.terminationStatus == 0 else {
+            throw DependencyError.installFailed("Failed to open AWS CLI installer")
+        }
 
         onOutput("AWS CLI installer opened. Follow the prompts to install, then click \"Check Again\".\n")
     }

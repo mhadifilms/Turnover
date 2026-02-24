@@ -210,8 +210,8 @@ public final class UploadManager: ObservableObject {
         aws: AWSCLIService
     ) async {
         await MainActor.run { job.status = .uploading(progress: -1) }
-        let (project, fileToUpload, s3Path, colorSpace) = await MainActor.run {
-            (job.project, job.fileToUpload, job.s3DestinationPath, job.colorSpace)
+        let (project, fileToUpload, sourceURL, s3Path, colorSpace) = await MainActor.run {
+            (job.project, job.fileToUpload, job.sourceURL, job.s3DestinationPath, job.colorSpace)
         }
 
         log("[Upload] \(fileToUpload.lastPathComponent) → s3://\(project?.s3Bucket ?? "?")/\(s3Path)")
@@ -221,14 +221,7 @@ public final class UploadManager: ObservableObject {
             return
         }
 
-        // Fast-fail: skip the upload entirely if the key already exists
-        if await aws.existsS3(bucket: project.s3Bucket, key: s3Path) {
-            await MainActor.run { job.status = .failed("Already exists on S3 — won't overwrite") }
-            return
-        }
-
-        // Atomic write: S3 returns 412 Precondition Failed if the key was
-        // created between the check above and this put-object call.
+        // Atomic write: S3 returns 412 Precondition Failed if the key already exists
         do {
             try await aws.conditionalUploadS3(
                 localPath: fileToUpload,
@@ -236,6 +229,13 @@ public final class UploadManager: ObservableObject {
                 key: s3Path,
                 metadata: ["color-space": colorSpace.rawValue]
             )
+
+            // Clean up _review temp files after successful upload
+            if fileToUpload != sourceURL {
+                try? FileManager.default.removeItem(at: fileToUpload)
+                log("[Upload] Cleaned up temp file: \(fileToUpload.lastPathComponent)")
+            }
+
             await MainActor.run { job.status = .completed }
         } catch let error as ProcessError {
             if error.stderr.contains("PreconditionFailed") || error.stderr.contains("412") {

@@ -2,6 +2,9 @@ import Foundation
 #if canImport(AppKit)
 import AppKit
 #endif
+#if os(macOS)
+import Darwin
+#endif
 
 public enum AWSCredentialStatus: Sendable, Equatable {
     case valid(account: String)
@@ -29,7 +32,7 @@ public final class AWSCLIService: Sendable {
                let account = json["Account"] as? String {
                 return .valid(account: account)
             }
-            return .valid(account: "unknown")
+            return .expired
         } catch let error as ProcessError {
             if error.stderr.contains("expired") || error.stderr.contains("token") {
                 return .expired
@@ -44,21 +47,18 @@ public final class AWSCLIService: Sendable {
     }
 
     /// Opens the SSO login URL in the default browser via `aws sso login`.
-    /// This command is interactive — it needs stdout/stdin connected to handle the browser flow.
+    /// Times out after 5 minutes if the user doesn't complete the browser flow.
     public func ssoLogin() async throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["aws", "sso", "login", "--profile", profile]
-        // Let stdin/stdout/stderr inherit so the browser URL gets opened
         process.standardInput = FileHandle.nullDevice
-        // Capture stderr to detect the verification URL
         let stderrPipe = Pipe()
         process.standardError = stderrPipe
         process.standardOutput = FileHandle.nullDevice
 
         try process.run()
 
-        // Read stderr on a background thread to find the verification URL
         let stderrHandle = stderrPipe.fileHandleForReading
         Task.detached {
             while true {
@@ -76,11 +76,20 @@ public final class AWSCLIService: Sendable {
             }
         }
 
-        // Wait for the process on a background thread (not cooperative pool)
+        let ssoTimeoutSeconds: Int = 300 // 5 minutes
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             DispatchQueue.global().async {
-                process.waitUntilExit()
-                if process.terminationStatus == 0 {
+                let deadline = DispatchTime.now() + .seconds(ssoTimeoutSeconds)
+                let semaphore = DispatchSemaphore(value: 0)
+                DispatchQueue.global().async {
+                    process.waitUntilExit()
+                    semaphore.signal()
+                }
+                let result = semaphore.wait(timeout: deadline)
+                if result == .timedOut {
+                    process.terminate()
+                    continuation.resume(throwing: ProcessError(exitCode: -1, stderr: "SSO login timed out after 5 minutes"))
+                } else if process.terminationStatus == 0 {
                     continuation.resume()
                 } else {
                     continuation.resume(throwing: ProcessError(exitCode: process.terminationStatus, stderr: "SSO login failed"))
@@ -248,7 +257,7 @@ public final class AWSCLIService: Sendable {
         try await runArray(args)
     }
 
-    private func runArray(_ args: [String]) async throws -> (stdout: String, stderr: String) {
+    private func runArray(_ args: [String], timeoutSeconds: Int = 600) async throws -> (stdout: String, stderr: String) {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 let process = Process()
@@ -267,8 +276,6 @@ public final class AWSCLIService: Sendable {
                     return
                 }
 
-                // Read pipes on separate threads to prevent deadlock when
-                // process output exceeds the pipe buffer (~64KB).
                 var stdoutData = Data()
                 var stderrData = Data()
                 let group = DispatchGroup()
@@ -285,7 +292,20 @@ public final class AWSCLIService: Sendable {
                     group.leave()
                 }
 
-                process.waitUntilExit()
+                // Wait with timeout to prevent hung processes
+                let semaphore = DispatchSemaphore(value: 0)
+                DispatchQueue.global().async {
+                    process.waitUntilExit()
+                    semaphore.signal()
+                }
+                let result = semaphore.wait(timeout: .now() + .seconds(timeoutSeconds))
+                if result == .timedOut {
+                    process.terminate()
+                    group.wait()
+                    continuation.resume(throwing: ProcessError(exitCode: -1, stderr: "Process timed out after \(timeoutSeconds)s"))
+                    return
+                }
+
                 group.wait()
 
                 let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
