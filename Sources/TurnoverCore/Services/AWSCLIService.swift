@@ -17,9 +17,11 @@ public enum AWSCredentialStatus: Sendable, Equatable {
 /// Using a class avoids serializing all S3 calls through one executor.
 public final class AWSCLIService: Sendable {
     private let profile: String
+    private let awsPath: String
 
     public init(profile: String = "default") {
         self.profile = profile
+        self.awsPath = DependencyCheck.findExecutable("aws") ?? "/usr/local/bin/aws"
     }
 
     // MARK: - Credential Management
@@ -50,8 +52,8 @@ public final class AWSCLIService: Sendable {
     /// Times out after 5 minutes if the user doesn't complete the browser flow.
     public func ssoLogin() async throws {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["aws", "sso", "login", "--profile", profile]
+        process.executableURL = URL(fileURLWithPath: awsPath)
+        process.arguments = ["sso", "login", "--profile", profile]
         process.standardInput = FileHandle.nullDevice
         let stderrPipe = Pipe()
         process.standardError = stderrPipe
@@ -138,8 +140,8 @@ public final class AWSCLIService: Sendable {
         }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = args
+        process.executableURL = URL(fileURLWithPath: awsPath)
+        process.arguments = Array(args.dropFirst())
 
         // Use a pseudo-TTY for stderr so aws cli outputs progress
         // (it suppresses progress when stderr is a pipe)
@@ -258,11 +260,12 @@ public final class AWSCLIService: Sendable {
     }
 
     private func runArray(_ args: [String], timeoutSeconds: Int = 600) async throws -> (stdout: String, stderr: String) {
-        try await withCheckedThrowingContinuation { continuation in
+        let resolvedPath = self.awsPath
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(stdout: String, stderr: String), Error>) in
             DispatchQueue.global().async {
                 let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = args
+                process.executableURL = URL(fileURLWithPath: resolvedPath)
+                process.arguments = Array(args.dropFirst())
 
                 let stdoutPipe = Pipe()
                 let stderrPipe = Pipe()
