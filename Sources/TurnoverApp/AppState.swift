@@ -257,16 +257,32 @@ public final class AppState: ObservableObject {
         saveJobs()
     }
 
+    func cancelJob(_ job: UploadJob) {
+        job.isCancelled = true
+        // The background task checks isCancelled and will stop.
+        // Reset status so the job can be retried or removed.
+        switch job.status {
+        case .muxingAudio, .taggingColor:
+            job.status = .pending
+        case .uploading:
+            job.status = .tagged
+        default:
+            break
+        }
+    }
+
     func clearCompleted() {
         jobs.removeAll { $0.status == .completed }
         saveJobs()
     }
 
     func startTagging() {
+        for job in jobs { job.isCancelled = false }
         uploadManager.activeTask = Task { await uploadManager.tagAll(jobs: jobs, enableAudioMuxing: enableAudioMuxing) }
     }
 
     func startUpload() {
+        for job in jobs { job.isCancelled = false }
         uploadManager.activeTask = Task { await uploadManager.uploadAll(jobs: jobs) }
     }
 

@@ -16,6 +16,13 @@ public enum UploadStatus: Sendable, Equatable {
         default: return false
         }
     }
+
+    public var isActive: Bool {
+        switch self {
+        case .muxingAudio, .taggingColor, .uploading: return true
+        default: return false
+        }
+    }
 }
 
 @MainActor
@@ -37,6 +44,7 @@ public final class UploadJob: ObservableObject, Identifiable {
     @Published public var colorSpace: ColorSpace
     @Published public var status: UploadStatus = .pending
     @Published public var isEditing: Bool = false
+    @Published public var isCancelled: Bool = false
     /// If audio muxing produced a temp file, upload this instead
     public var muxedFileURL: URL?
     /// If color tagging produced a temp file, upload this instead

@@ -6,6 +6,7 @@ struct FileRowView: View {
     @ObservedObject var job: UploadJob
 
     @State private var showDeleteConfirmation = false
+    @State private var showCancelConfirmation = false
     @State private var isRenaming = false
     @State private var renameText = ""
     @State private var showS3Browser = false
@@ -65,6 +66,14 @@ struct FileRowView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will permanently delete:\n\(job.s3DestinationPath)")
+        }
+        .alert("Cancel this job?", isPresented: $showCancelConfirmation) {
+            Button("Cancel Job", role: .destructive) {
+                appState.cancelJob(job)
+            }
+            Button("Keep Running", role: .cancel) {}
+        } message: {
+            Text("This will stop processing \(job.fileName).")
         }
     }
 
@@ -221,6 +230,14 @@ struct FileRowView: View {
                 .foregroundStyle(.secondary)
                 .help("Remove")
                 .accessibilityLabel("Remove \(job.fileName)")
+            } else if job.status.isActive {
+                Button { showCancelConfirmation = true } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.red)
+                .help("Cancel")
+                .accessibilityLabel("Cancel \(job.fileName)")
             } else {
                 Button { job.isEditing.toggle() } label: {
                     Image(systemName: "pencil")

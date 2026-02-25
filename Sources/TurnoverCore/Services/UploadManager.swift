@@ -156,10 +156,17 @@ public final class UploadManager: ObservableObject {
             return
         }
 
+        // Check cancellation before each major step
+        func cancelled() async -> Bool {
+            await MainActor.run { job.isCancelled }
+        }
+
         // 1. Probe file (ONE ffprobe call)
         let sourceURL = await MainActor.run { job.sourceURL }
         let probeResult = await audioMuxer.probeFile(fileURL: sourceURL)
         log("[Tag] \(fileName): probe → hasAudio=\(probeResult.hasAudioTrack), color=\(probeResult.colorPrimaries ?? "nil")/\(probeResult.colorTransfer ?? "nil")/\(probeResult.colorSpace ?? "nil")")
+
+        if await cancelled() { return }
 
         // 2. Determine if color tagging is needed
         let colorSpace = await MainActor.run { job.colorSpace }
@@ -179,6 +186,7 @@ public final class UploadManager: ObservableObject {
                     colorFlags: needsColorTag ? colorFlags : nil,
                     onStep: { step in await MainActor.run { job.status = .muxingAudio(step) } }
                 ) {
+                    if await cancelled() { return }
                     await MainActor.run { job.muxedFileURL = muxedURL }
                     didMux = true
                     log("[Tag] \(fileName): muxed → \(muxedURL.lastPathComponent)")
@@ -186,6 +194,7 @@ public final class UploadManager: ObservableObject {
                     log("[Tag] \(fileName): mux skipped (returned nil)")
                 }
             } catch {
+                if await cancelled() { return }
                 muxError = error.localizedDescription
                 log("[Tag] \(fileName): mux FAILED → \(error.localizedDescription)")
                 await MainActor.run { job.muxedFileURL = nil }
@@ -193,6 +202,8 @@ public final class UploadManager: ObservableObject {
         } else {
             log("[Tag] \(fileName): audio mux disabled by user")
         }
+
+        if await cancelled() { return }
 
         // 4. Standalone color tagging if needed and audio mux didn't happen
         var tagError: String?
@@ -204,17 +215,21 @@ public final class UploadManager: ObservableObject {
                     probeResult: probeResult,
                     targetColorSpace: colorSpace
                 ) {
+                    if await cancelled() { return }
                     await MainActor.run { job.taggedFileURL = taggedURL }
                     log("[Tag] \(fileName): color tagged → \(taggedURL.lastPathComponent)")
                 } else {
                     log("[Tag] \(fileName): color tag skipped (returned nil)")
                 }
             } catch {
+                if await cancelled() { return }
                 tagError = error.localizedDescription
                 log("[Tag] \(fileName): color tag FAILED → \(error.localizedDescription)")
                 await MainActor.run { job.taggedFileURL = nil }
             }
         }
+
+        if await cancelled() { return }
 
         // 5. Check results — fail if errors occurred and no output was produced
         let fileToUpload = await MainActor.run { job.fileToUpload }
@@ -234,6 +249,7 @@ public final class UploadManager: ObservableObject {
         _ job: UploadJob,
         aws: AWSCLIService
     ) async {
+        if await MainActor.run(body: { job.isCancelled }) { return }
         await MainActor.run { job.status = .uploading(progress: -1) }
         let isSequence = await MainActor.run { job.isSequence }
 
@@ -297,6 +313,7 @@ public final class UploadManager: ObservableObject {
         log("[Upload] Sequence \(s3BasePath) — \(total) frames")
 
         for (index, frameURL) in sequenceURLs.enumerated() {
+            if await MainActor.run(body: { job.isCancelled }) { return }
             let frameName = frameURL.lastPathComponent
             let s3Key = "\(s3BasePath)/\(frameName)"
 
