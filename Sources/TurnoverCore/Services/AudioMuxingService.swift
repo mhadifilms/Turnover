@@ -67,14 +67,28 @@ public actor AudioMuxingService {
         if probeResult.hasAudioTrack { return nil }
 
         // Find shot folder
-        let shotFolder = try await resolver.findShotFolder(project: project, shotPrefix: parsed.shotPrefix)
+        let shotFolder: String
+        do {
+            shotFolder = try await resolver.findShotFolder(project: project, shotPrefix: parsed.shotPrefix)
+        } catch {
+            throw MuxError.wrap("Finding shot folder", error)
+        }
 
         // Find WAVs in plates folder
-        let wavFiles = try await resolver.findPlatesAudio(project: project, shotFolder: shotFolder)
+        let wavFiles: [String]
+        do {
+            wavFiles = try await resolver.findPlatesAudio(project: project, shotFolder: shotFolder)
+        } catch {
+            throw MuxError.wrap("Listing audio stems", error)
+        }
         guard !wavFiles.isEmpty else { return nil }
 
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("vfx-upload-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("turnover-mux-\(UUID().uuidString)")
+        do {
+            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        } catch {
+            throw MuxError.diskError("Cannot create temp directory: \(error.localizedDescription)")
+        }
 
         let ffmpeg = findExecutable("ffmpeg")
         let localAudio: URL
@@ -84,7 +98,11 @@ public actor AudioMuxingService {
             let safeName = URL(fileURLWithPath: mergedWav).lastPathComponent
             let wavKey = "\(project.s3BasePath)/\(shotFolder)/\(project.platesFolder)/\(mergedWav)"
             localAudio = tempDir.appendingPathComponent(safeName)
-            try await aws.downloadS3(bucket: project.s3Bucket, key: wavKey, to: localAudio)
+            do {
+                try await aws.downloadS3(bucket: project.s3Bucket, key: wavKey, to: localAudio)
+            } catch {
+                throw MuxError.wrap("Downloading audio from S3", error)
+            }
         } else {
             // Download all stems and merge with ffmpeg amix
             var localWavs: [URL] = []
@@ -92,7 +110,11 @@ public actor AudioMuxingService {
                 let safeName = URL(fileURLWithPath: wav).lastPathComponent
                 let wavKey = "\(project.s3BasePath)/\(shotFolder)/\(project.platesFolder)/\(wav)"
                 let localWav = tempDir.appendingPathComponent(safeName)
-                try await aws.downloadS3(bucket: project.s3Bucket, key: wavKey, to: localWav)
+                do {
+                    try await aws.downloadS3(bucket: project.s3Bucket, key: wavKey, to: localWav)
+                } catch {
+                    throw MuxError.wrap("Downloading \(safeName)", error)
+                }
                 localWavs.append(localWav)
             }
 
@@ -106,7 +128,11 @@ public actor AudioMuxingService {
                 "-ac", "2",
                 "-y", localAudio.path
             ]
-            let _ = try await runProcess(mergeArgs)
+            do {
+                let _ = try await runProcess(mergeArgs)
+            } catch {
+                throw MuxError.wrap("Merging audio stems", error)
+            }
         }
 
         // Mux video + audio — save next to the original with _review suffix
@@ -128,7 +154,11 @@ public actor AudioMuxingService {
         }
         muxArgs += ["-y", outputURL.path]
 
-        let _ = try await runProcess(muxArgs)
+        do {
+            let _ = try await runProcess(muxArgs)
+        } catch {
+            throw MuxError.wrap("Muxing audio", error)
+        }
 
         // Clean up temp downloads
         try? FileManager.default.removeItem(at: tempDir)
@@ -175,8 +205,8 @@ public actor AudioMuxingService {
     }
 
     /// Run process on a real background thread, drain pipes concurrently to avoid deadlock.
-    private func runProcess(_ args: [String]) async throws -> (stdout: String, stderr: String) {
-        try await withCheckedThrowingContinuation { continuation in
+    private func runProcess(_ args: [String], timeoutSeconds: Int = 300) async throws -> (stdout: String, stderr: String) {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(stdout: String, stderr: String), Error>) in
             DispatchQueue.global().async {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: args[0])
@@ -210,7 +240,19 @@ public actor AudioMuxingService {
                     group.leave()
                 }
 
-                process.waitUntilExit()
+                let semaphore = DispatchSemaphore(value: 0)
+                DispatchQueue.global().async {
+                    process.waitUntilExit()
+                    semaphore.signal()
+                }
+                let result = semaphore.wait(timeout: .now() + .seconds(timeoutSeconds))
+                if result == .timedOut {
+                    process.terminate()
+                    group.wait()
+                    continuation.resume(throwing: ProcessError(exitCode: -1, stderr: "Process timed out after \(timeoutSeconds)s"))
+                    return
+                }
+
                 group.wait()
 
                 let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
@@ -223,5 +265,43 @@ public actor AudioMuxingService {
                 }
             }
         }
+    }
+}
+
+enum MuxError: Error, LocalizedError {
+    case diskError(String)
+    case stepFailed(step: String, detail: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .diskError(let msg): return msg
+        case .stepFailed(let step, let detail): return "\(step): \(detail)"
+        }
+    }
+
+    /// Wrap a caught error with a human-readable step name, condensing verbose stderr.
+    static func wrap(_ step: String, _ error: Error) -> MuxError {
+        let raw = error.localizedDescription
+        // Condense common patterns
+        if raw.contains("timed out") {
+            return .stepFailed(step: step, detail: "Timed out")
+        }
+        if raw.contains("No space left") || raw.contains("Disk full") || raw.contains("ENOSPC") {
+            return .stepFailed(step: step, detail: "Disk full")
+        }
+        if raw.contains("Could not resolve host") || raw.contains("Network is unreachable")
+            || raw.contains("Connection refused") || raw.contains("Unable to locate credentials") {
+            return .stepFailed(step: step, detail: "Network or credentials error")
+        }
+        if raw.contains("No such file") || raw.contains("does not exist") {
+            return .stepFailed(step: step, detail: "File not found")
+        }
+        if raw.contains("Permission denied") || raw.contains("AccessDenied") {
+            return .stepFailed(step: step, detail: "Permission denied")
+        }
+        // Truncate verbose ffmpeg/aws output to first meaningful line
+        let firstLine = raw.split(separator: "\n").last(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? Substring(raw)
+        let truncated = firstLine.count > 120 ? firstLine.prefix(120) + "…" : firstLine
+        return .stepFailed(step: step, detail: String(truncated))
     }
 }
