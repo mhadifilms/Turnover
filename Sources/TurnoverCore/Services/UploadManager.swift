@@ -267,12 +267,6 @@ public final class UploadManager: ObservableObject {
                 metadata: ["color-space": colorSpace.rawValue]
             )
 
-            // Clean up _review temp files after successful upload
-            if fileToUpload != sourceURL {
-                try? FileManager.default.removeItem(at: fileToUpload)
-                log("[Upload] Cleaned up temp file: \(fileToUpload.lastPathComponent)")
-            }
-
             await MainActor.run { job.status = .completed }
         } catch let error as ProcessError {
             if error.stderr.contains("PreconditionFailed") || error.stderr.contains("412") {

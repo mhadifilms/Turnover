@@ -159,6 +159,15 @@ struct FileRowView: View {
 
     private var actions: some View {
         HStack(spacing: 4) {
+            if case .tagged = job.status {
+                Button { appState.previewFile(for: job) } label: {
+                    Image(systemName: "play.circle")
+                }
+                .buttonStyle(.plain)
+                .help("Preview in QuickTime")
+                .accessibilityLabel("Preview \(job.fileName) in QuickTime")
+            }
+
             if case .completed = job.status {
                 Button { appState.previewFile(for: job) } label: {
                     Image(systemName: "play.circle")
