@@ -6,10 +6,13 @@ VERSION="${1:-dev}"
 APP_NAME="Turnover"
 DISPLAY_NAME="Turnover"
 BUILD_DIR=".build/release"
-APP_BUNDLE="${DISPLAY_NAME}.app"
+OUT_DIR="build"
+APP_BUNDLE="${OUT_DIR}/${DISPLAY_NAME}.app"
 CONTENTS="${APP_BUNDLE}/Contents"
 MACOS="${CONTENTS}/MacOS"
-DMG_NAME="${DISPLAY_NAME}-${VERSION}.dmg"
+DMG_NAME="${OUT_DIR}/${DISPLAY_NAME}-${VERSION}.dmg"
+DMG_STAGING="${OUT_DIR}/dmg_staging"
+DMG_TEMP="${OUT_DIR}/${DISPLAY_NAME}-temp.dmg"
 
 echo "Building release..."
 swift build -c release
@@ -19,6 +22,7 @@ rm -rf "${APP_BUNDLE}"
 mkdir -p "${MACOS}" "${CONTENTS}/Resources"
 
 cp "${BUILD_DIR}/TurnoverApp" "${MACOS}/${APP_NAME}"
+cp "Assets/AppIcon.icns" "${CONTENTS}/Resources/AppIcon.icns"
 
 cat > "${CONTENTS}/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -52,14 +56,10 @@ echo "Created ${APP_BUNDLE}"
 
 echo "Creating DMG..."
 rm -f "${DMG_NAME}"
-
-DMG_STAGING="dmg_staging"
-DMG_TEMP="${DISPLAY_NAME}-temp.dmg"
-
 rm -rf "${DMG_STAGING}"
 mkdir -p "${DMG_STAGING}"
 cp -R "${APP_BUNDLE}" "${DMG_STAGING}/"
-xattr -cr "${DMG_STAGING}/${APP_BUNDLE}"
+xattr -cr "${DMG_STAGING}/${DISPLAY_NAME}.app"
 
 # Create a read-write DMG (Applications alias added after mount)
 hdiutil create -volname "${DISPLAY_NAME}" \
@@ -127,7 +127,7 @@ hdiutil detach "${MOUNT_DIR}"
 # Convert to compressed read-only DMG
 hdiutil convert "${DMG_TEMP}" -format UDZO -o "${DMG_NAME}"
 
-# Clean up
+# Clean up temp files, keep the .app and .dmg
 rm -f "${DMG_TEMP}"
 rm -rf "${DMG_STAGING}"
 
