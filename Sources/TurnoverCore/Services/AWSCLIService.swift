@@ -137,8 +137,15 @@ public final class AWSCLIService: Sendable {
             }
 
             let (stdout, _) = try await runArray(args)
-            guard let data = stdout.data(using: .utf8),
-                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { break }
+
+            // Empty stdout means no objects at this prefix
+            let trimmed = stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { break }
+
+            guard let data = trimmed.data(using: .utf8),
+                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw ProcessError(exitCode: -1, stderr: "Invalid response from S3")
+            }
 
             // Folders from CommonPrefixes
             if let prefixes = json["CommonPrefixes"] as? [[String: Any]] {
