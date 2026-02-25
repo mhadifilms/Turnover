@@ -29,6 +29,8 @@ public final class AppState: ObservableObject {
     @Published var showFilePicker = false
     @Published var ssoError: String?
     @Published var availableUpdate: AppRelease?
+    @Published var updateProgress: UpdateProgress = .idle
+    @Published var showUpdateSheet = false
 
     var selectedColorSpace: ColorSpace {
         get { ColorSpace(rawValue: colorSpaceRawValue) ?? .p3D65PQ }
@@ -107,6 +109,133 @@ public final class AppState: ObservableObject {
     func openUpdate() {
         guard let update = availableUpdate else { return }
         NSWorkspace.shared.open(update.downloadURL)
+    }
+
+    func installUpdate() {
+        guard let update = availableUpdate else { return }
+        guard case .idle = updateProgress else { return }
+
+        updateProgress = .downloading(0)
+        Task {
+            do {
+                // 1. Download DMG
+                let dmgURL = try await downloadDMG(from: update.downloadURL)
+                updateProgress = .installing
+
+                // 2. Mount DMG
+                let mountPoint = try await mountDMG(at: dmgURL)
+
+                // 3. Find .app inside mounted DMG
+                let fm = FileManager.default
+                let contents = try fm.contentsOfDirectory(atPath: mountPoint)
+                guard let appName = contents.first(where: { $0.hasSuffix(".app") }) else {
+                    try? await unmountDMG(mountPoint)
+                    updateProgress = .failed("No app found in DMG")
+                    return
+                }
+                let sourceApp = "\(mountPoint)/\(appName)"
+
+                // 4. Determine install location (where we're running from)
+                let currentApp = Bundle.main.bundlePath
+                let installPath: String
+                if currentApp.contains("/Applications/") || currentApp.hasSuffix(".app") {
+                    installPath = currentApp
+                } else {
+                    installPath = "/Applications/Turnover.app"
+                }
+
+                // 5. Spawn updater script and quit
+                let script = """
+                #!/bin/bash
+                sleep 1
+                rm -rf "\(installPath)"
+                cp -R "\(sourceApp)" "\(installPath)"
+                xattr -cr "\(installPath)"
+                hdiutil detach "\(mountPoint)" -quiet 2>/dev/null
+                rm -f "\(dmgURL.path)"
+                open "\(installPath)"
+                """
+                let scriptPath = "/tmp/turnover-update.sh"
+                try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+                chmod(scriptPath, 0o755)
+
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/bash")
+                process.arguments = [scriptPath]
+                try process.run()
+
+                updateProgress = .restarting
+                // Give the script a moment to start, then quit
+                try? await Task.sleep(for: .milliseconds(500))
+                NSApp.terminate(nil)
+            } catch {
+                updateProgress = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    private func downloadDMG(from url: URL) async throws -> URL {
+        let delegate = DMGDownloadDelegate()
+        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("Turnover-update.dmg")
+        try? FileManager.default.removeItem(at: dest)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            delegate.onProgress = { [weak self] fraction in
+                Task { @MainActor in self?.updateProgress = .downloading(fraction) }
+            }
+            delegate.onComplete = { location, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let location else {
+                    continuation.resume(throwing: UpdateError.downloadFailed)
+                    return
+                }
+                do {
+                    try FileManager.default.moveItem(at: location, to: dest)
+                    continuation.resume(returning: dest)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+            session.downloadTask(with: url).resume()
+        }
+    }
+
+    private func mountDMG(at url: URL) async throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+        process.arguments = ["attach", url.path, "-nobrowse", "-noverify", "-noautoopen"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            throw UpdateError.mountFailed
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: data, encoding: .utf8) ?? ""
+        // Last line contains mount point: "/dev/disk4s1	Apple_APFS	/Volumes/Turnover"
+        guard let lastLine = output.split(separator: "\n").last,
+              let mountPoint = lastLine.split(separator: "\t").last else {
+            throw UpdateError.mountFailed
+        }
+        return String(mountPoint)
+    }
+
+    private func unmountDMG(_ mountPoint: String) async throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+        process.arguments = ["detach", mountPoint, "-quiet"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
     }
 
     func recheckDependencies() {
@@ -238,7 +367,7 @@ public final class AppState: ObservableObject {
         var newJobs: [UploadJob] = []
 
         // Create sequence jobs
-        for (key, seq) in sequenceFrames {
+        for (_, seq) in sequenceFrames {
             let sorted = seq.urls.sorted { $0.lastPathComponent < $1.lastPathComponent }
             let frames = sorted.compactMap { FileNameParser.parse(fileName: $0.lastPathComponent)?.frameNumber }
             let range = frames.isEmpty ? "?" : "\(frames.first!)-\(frames.last!)"
@@ -406,5 +535,60 @@ public final class AppState: ObservableObject {
             observeJob(job)
         }
     }
+}
 
+// MARK: - Update Support
+
+enum UpdateProgress: Equatable {
+    case idle
+    case downloading(Double)
+    case installing
+    case restarting
+    case failed(String)
+}
+
+enum UpdateError: Error, LocalizedError {
+    case mountFailed
+    case downloadFailed
+    var errorDescription: String? {
+        switch self {
+        case .mountFailed: return "Failed to mount DMG"
+        case .downloadFailed: return "Download failed"
+        }
+    }
+}
+
+final class DMGDownloadDelegate: NSObject, URLSessionDownloadDelegate {
+    var onProgress: ((Double) -> Void)?
+    var onComplete: ((URL?, Error?) -> Void)?
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        guard totalBytesExpectedToWrite > 0 else { return }
+        let fraction = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        onProgress?(fraction)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        onComplete?(location, nil)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        if let error {
+            onComplete?(nil, error)
+        }
+    }
 }

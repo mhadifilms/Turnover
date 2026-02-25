@@ -75,7 +75,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                     if let update = appState.availableUpdate {
                         Button("v\(update.version) available") {
-                            appState.openUpdate()
+                            appState.showUpdateSheet = true
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)

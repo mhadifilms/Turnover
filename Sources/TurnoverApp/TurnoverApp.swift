@@ -183,7 +183,9 @@ struct MenuBarDropdown: View {
         if let update = appState.availableUpdate {
             Divider()
             Button("Update to v\(update.version)") {
-                appState.openUpdate()
+                openWindow(id: "main")
+                NSApp.activate()
+                appState.showUpdateSheet = true
             }
         }
 

@@ -23,11 +23,11 @@ struct MenuBarContentView: View {
                     .foregroundStyle(.secondary)
             }
             ToolbarItemGroup(placement: .primaryAction) {
-                if let update = appState.availableUpdate {
-                    Button { appState.openUpdate() } label: {
-                        Label("v\(update.version)", systemImage: "arrow.down.circle")
+                if appState.availableUpdate != nil {
+                    Button { appState.showUpdateSheet = true } label: {
+                        Label("Update", systemImage: "arrow.down.circle")
                     }
-                    .help("Update available — click to download")
+                    .help("Update available")
                 }
                 if appState.jobs.contains(where: { $0.status == .completed }) {
                     Button("Clear Done") { appState.clearCompleted() }
@@ -39,6 +39,11 @@ struct MenuBarContentView: View {
             }
         }
         .environmentObject(appState)
+        .sheet(isPresented: $appState.showUpdateSheet) {
+            if let update = appState.availableUpdate {
+                UpdateSheetView(appState: appState, update: update)
+            }
+        }
     }
 
     @ViewBuilder
