@@ -11,8 +11,6 @@ struct MenuBarContentView: View {
                 SetupView()
             } else if !appState.isAuthenticated {
                 CredentialView()
-            } else if appState.uploadManager.isTagging || appState.uploadManager.isUploading {
-                UploadProgressView()
             } else {
                 mainContent
             }
@@ -51,10 +49,44 @@ struct MenuBarContentView: View {
     private var mainContent: some View {
         VStack(spacing: 0) {
             DropZoneView()
+
             if appState.hasJobs {
                 Divider()
+
+                if appState.uploadManager.isTagging || appState.uploadManager.isUploading {
+                    progressBar
+                        .padding(12)
+                    Divider()
+                }
+
                 FileListView()
                 actionBar
+            }
+        }
+    }
+
+    private var progressBar: some View {
+        VStack(spacing: 4) {
+            ProgressView(
+                value: Double(appState.uploadManager.completedCount),
+                total: max(Double(appState.uploadManager.totalCount), 1)
+            )
+            .progressViewStyle(.linear)
+            .accessibilityLabel("Overall progress")
+            .accessibilityValue("\(appState.uploadManager.completedCount) of \(appState.uploadManager.totalCount) completed")
+
+            HStack {
+                Text(appState.uploadManager.isTagging ? "Tagging\u{2026}" : "Uploading\u{2026}")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(appState.uploadManager.completedCount)/\(appState.uploadManager.totalCount)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Cancel") { appState.cancelOperation() }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(.red)
             }
         }
     }
