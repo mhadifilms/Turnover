@@ -67,9 +67,30 @@ struct SettingsView: View {
 
                 Toggle("Audio Muxing", isOn: $appState.enableAudioMuxing)
                     .help("Automatically mix audio from plates folder into uploads")
+
+                HStack {
+                    Text("Version")
+                    Spacer()
+                    Text(appState.currentVersion)
+                        .foregroundStyle(.secondary)
+                    if let update = appState.availableUpdate {
+                        Button("v\(update.version) available") {
+                            appState.openUpdate()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    } else {
+                        Button("Check") {
+                            Task { await appState.checkForUpdates() }
+                        }
+                        .buttonStyle(.plain)
+                        .controlSize(.small)
+                        .foregroundStyle(.secondary)
+                    }
+                }
             }
             .formStyle(.grouped)
-            .frame(minHeight: 100, maxHeight: 120)
+            .frame(minHeight: 140, maxHeight: 160)
         }
         .frame(width: 560, height: 440)
     }

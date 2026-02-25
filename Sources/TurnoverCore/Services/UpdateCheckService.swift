@@ -12,6 +12,10 @@ public enum UpdateCheckService {
 
     /// Check GitHub for the latest release. Returns nil if already up to date.
     public static func checkForUpdate(currentVersion: String) async -> AppRelease? {
+        // Don't check for dev/unknown versions
+        let parsed = parseVersion(currentVersion)
+        guard parsed != (0, 0, 0) else { return nil }
+
         guard let url = URL(string: apiURL) else { return nil }
 
         var request = URLRequest(url: url)

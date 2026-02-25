@@ -95,10 +95,12 @@ public final class AppState: ObservableObject {
     }
 
     var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
     }
 
     func checkForUpdates() async {
+        // Skip update check for dev builds (no Info.plist)
+        guard currentVersion != "dev" else { return }
         availableUpdate = await UpdateCheckService.checkForUpdate(currentVersion: currentVersion)
     }
 
