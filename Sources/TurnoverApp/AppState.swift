@@ -156,17 +156,10 @@ public final class AppState: ObservableObject {
 
     func openSSOConfigInTerminal() {
         let awsPath = DependencyCheck.findExecutable("aws") ?? "aws"
-        let script = """
-        tell application "Terminal"
-            activate
-            delay 0.5
-            do script "\(awsPath) configure sso"
-        end tell
-        """
-        if let appleScript = NSAppleScript(source: script) {
-            var error: NSDictionary?
-            appleScript.executeAndReturnError(&error)
-        }
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("turnover-sso-config.command")
+        try? "#!/bin/bash\n\"\(awsPath)\" configure sso\n".write(to: tmp, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmp.path)
+        NSWorkspace.shared.open(tmp)
     }
 
     func ssoLogin() {
