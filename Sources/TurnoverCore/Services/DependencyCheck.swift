@@ -18,7 +18,7 @@ public enum DependencyCheck {
     /// App-specific bin directory for downloaded tools
     public static let appSupportBinDir: String = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("VFXUpload/bin").path
+        return appSupport.appendingPathComponent("Turnover/bin").path
     }()
 
     private static let searchPaths = [

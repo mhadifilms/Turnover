@@ -5,7 +5,7 @@ public final class JobHistoryStore: Sendable {
 
     public init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = appSupport.appendingPathComponent("VFXUpload", isDirectory: true)
+        let dir = appSupport.appendingPathComponent("Turnover", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         self.fileURL = dir.appendingPathComponent("job-history.json")
     }

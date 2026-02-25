@@ -29,7 +29,7 @@ public struct Project: Identifiable, Hashable, Sendable, Codable {
 public enum ProjectStore {
     private static var configURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("VFXUpload/projects.json")
+        return appSupport.appendingPathComponent("Turnover/projects.json")
     }
 
     public static func load() -> [Project] {
