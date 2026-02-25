@@ -42,6 +42,10 @@ struct UploadProgressView: View {
                 Text("\(appState.uploadManager.completedCount)/\(appState.uploadManager.totalCount)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Button("Cancel") { appState.cancelOperation() }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(.red)
             }
         }
     }

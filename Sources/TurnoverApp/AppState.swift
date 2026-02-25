@@ -263,11 +263,26 @@ public final class AppState: ObservableObject {
     }
 
     func startTagging() {
-        Task { await uploadManager.tagAll(jobs: jobs, enableAudioMuxing: enableAudioMuxing) }
+        uploadManager.activeTask = Task { await uploadManager.tagAll(jobs: jobs, enableAudioMuxing: enableAudioMuxing) }
     }
 
     func startUpload() {
-        Task { await uploadManager.uploadAll(jobs: jobs) }
+        uploadManager.activeTask = Task { await uploadManager.uploadAll(jobs: jobs) }
+    }
+
+    func cancelOperation() {
+        uploadManager.cancel()
+        // Reset in-progress jobs back to their pre-operation status
+        for job in jobs {
+            switch job.status {
+            case .muxingAudio, .taggingColor:
+                job.status = .pending
+            case .uploading:
+                job.status = .tagged
+            default:
+                break
+            }
+        }
     }
 
     // MARK: - Post-Upload Actions

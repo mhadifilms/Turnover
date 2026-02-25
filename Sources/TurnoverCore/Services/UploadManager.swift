@@ -20,11 +20,19 @@ public final class UploadManager: ObservableObject {
     private let resolver: S3PathResolver
     private let audioMuxer: AudioMuxingService
     private let maxConcurrent = 3
+    public var activeTask: Task<Void, Never>?
 
     public init(aws: AWSCLIService, resolver: S3PathResolver, audioMuxer: AudioMuxingService) {
         self.aws = aws
         self.resolver = resolver
         self.audioMuxer = audioMuxer
+    }
+
+    public func cancel() {
+        activeTask?.cancel()
+        activeTask = nil
+        isTagging = false
+        isUploading = false
     }
 
     // MARK: - Tag All
@@ -47,12 +55,15 @@ public final class UploadManager: ObservableObject {
             var index = 0
 
             while index < pendingJobs.count || running > 0 {
+                if Task.isCancelled { group.cancelAll(); break }
+
                 while running < maxConcurrent && index < pendingJobs.count {
                     let job = pendingJobs[index]
                     index += 1
                     running += 1
 
                     group.addTask {
+                        guard !Task.isCancelled else { return }
                         await Self.tagJob(job, audioMuxer: audioMuxer, enableAudioMuxing: enableAudioMuxing)
                     }
                 }
@@ -88,12 +99,15 @@ public final class UploadManager: ObservableObject {
             var index = 0
 
             while index < taggedJobs.count || running > 0 {
+                if Task.isCancelled { group.cancelAll(); break }
+
                 while running < maxConcurrent && index < taggedJobs.count {
                     let job = taggedJobs[index]
                     index += 1
                     running += 1
 
                     group.addTask {
+                        guard !Task.isCancelled else { return }
                         await Self.uploadJob(job, aws: aws)
                     }
                 }
