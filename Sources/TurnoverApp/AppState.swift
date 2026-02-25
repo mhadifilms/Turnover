@@ -20,6 +20,7 @@ public final class AppState: ObservableObject {
     @Published var isDownloadingFFmpeg = false
     @Published var isInstallingAWS = false
     @Published var setupOutput: String = ""
+    @Published var setupError: String?
     @Published var credentialStatus: AWSCredentialStatus = .expired
     @Published var isCheckingCredentials = false
     @Published var jobs: [UploadJob] = []
@@ -122,31 +123,34 @@ public final class AppState: ObservableObject {
     func downloadFFmpeg() {
         isDownloadingFFmpeg = true
         setupOutput = ""
+        setupError = nil
         Task {
             do {
                 try await DependencyCheck.downloadFFmpeg { [weak self] text in
                     Task { @MainActor in self?.setupOutput += text }
                 }
-                recheckDependencies()
             } catch {
-                setupOutput += "\nDownload failed: \(error.localizedDescription)\n"
+                setupError = "Download failed: \(error.localizedDescription)"
             }
             isDownloadingFFmpeg = false
+            recheckDependencies()
         }
     }
 
     func installAWSCLI() {
         isInstallingAWS = true
         setupOutput = ""
+        setupError = nil
         Task {
             do {
                 try await DependencyCheck.installAWSCLI { [weak self] text in
                     Task { @MainActor in self?.setupOutput += text }
                 }
             } catch {
-                setupOutput += "\nInstall failed: \(error.localizedDescription)\n"
+                setupError = "Install failed: \(error.localizedDescription)"
             }
             isInstallingAWS = false
+            recheckDependencies()
         }
     }
 

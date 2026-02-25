@@ -187,8 +187,6 @@ public enum DependencyCheck {
         let pkgURL = "https://awscli.amazonaws.com/AWSCLIV2.pkg"
         let pkgPath = fm.temporaryDirectory.appendingPathComponent("AWSCLIV2-\(UUID().uuidString).pkg").path
 
-        defer { try? fm.removeItem(atPath: pkgPath) }
-
         onOutput("Downloading AWS CLI installer...\n")
 
         let process = Process()
@@ -229,14 +227,15 @@ public enum DependencyCheck {
 
         let openProcess = Process()
         openProcess.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        openProcess.arguments = [pkgPath]
+        openProcess.arguments = ["-W", pkgPath]
         try openProcess.run()
         openProcess.waitUntilExit()
         guard openProcess.terminationStatus == 0 else {
             throw DependencyError.installFailed("Failed to open AWS CLI installer")
         }
 
-        onOutput("AWS CLI installer opened. Follow the prompts to install, then click \"Check Again\".\n")
+        try? fm.removeItem(atPath: pkgPath)
+        onOutput("AWS CLI installer closed. Click \"Check Again\" to verify.\n")
     }
 
     // MARK: - SSO Config
