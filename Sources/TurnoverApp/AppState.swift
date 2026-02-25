@@ -95,6 +95,9 @@ public final class AppState: ObservableObject {
     func recheckDependencies() {
         DependencyCheck.simulateCleanInstall = false
         dependencyStatus = DependencyCheck.check()
+        if dependencyStatus.isReady {
+            Task { await checkCredentials() }
+        }
     }
 
     func reloadProjects() {
