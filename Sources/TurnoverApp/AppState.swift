@@ -109,6 +109,7 @@ public final class AppState: ObservableObject {
             projects = ProjectStore.load()
             configText = ProjectStore.loadText()
             configError = nil
+            recheckDependencies()
         } catch {
             configError = error.localizedDescription
         }
