@@ -11,33 +11,31 @@ struct S3BrowserView: View {
 
     @State private var currentPrefix: String = ""
     @State private var pathHistory: [String] = []
-    @State private var items: [String] = []
+    @State private var folders: [String] = []
+    @State private var files: [String] = []
     @State private var filename: String = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var cache: [String: (folders: [String], files: [String])] = [:]
 
     var body: some View {
         VStack(spacing: 0) {
             // Navigation bar
-            HStack {
+            HStack(spacing: 6) {
                 Button {
                     goBack()
                 } label: {
-                    HStack(spacing: 2) {
-                        Image(systemName: "chevron.left")
-                        Text("Back")
-                    }
+                    Image(systemName: "chevron.left")
                 }
                 .buttonStyle(.plain)
                 .disabled(pathHistory.isEmpty)
 
-                Spacer()
-
                 Text(breadcrumb)
-                    .font(.caption)
+                    .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.head)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -47,7 +45,8 @@ struct S3BrowserView: View {
             // Content area
             if isLoading {
                 Spacer()
-                ProgressView("Loading\u{2026}")
+                ProgressView()
+                    .controlSize(.small)
                 Spacer()
             } else if let error = errorMessage {
                 Spacer()
@@ -61,52 +60,64 @@ struct S3BrowserView: View {
                         .controlSize(.small)
                 }
                 Spacer()
-            } else if items.isEmpty {
+            } else if folders.isEmpty && files.isEmpty {
                 Spacer()
                 Text("Empty folder")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
             } else {
-                List {
-                    ForEach(folders, id: \.self) { folder in
-                        Button {
-                            navigateInto(folder)
-                        } label: {
-                            HStack {
-                                Image(systemName: "folder.fill")
-                                    .foregroundStyle(.blue)
-                                Text(folder)
-                                    .lineLimit(1)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    ForEach(files, id: \.self) { file in
-                        Button {
-                            filename = file
-                        } label: {
-                            HStack {
-                                Image(systemName: "doc")
-                                    .foregroundStyle(.secondary)
-                                Text(file)
-                                    .lineLimit(1)
-                                Spacer()
-                                if filename == file {
-                                    Image(systemName: "checkmark")
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(folders, id: \.self) { folder in
+                            Button { navigateInto(folder) } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "folder.fill")
                                         .foregroundStyle(.blue)
-                                        .font(.caption)
+                                        .frame(width: 16)
+                                    Text(folder.hasSuffix("/") ? String(folder.dropLast()) : folder)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .foregroundStyle(.tertiary)
+                                        .font(.caption2)
                                 }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 5)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            Divider().padding(.leading, 34)
+                        }
+
+                        ForEach(files, id: \.self) { file in
+                            Button { filename = file } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "doc")
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 16)
+                                    Text(file)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                    Spacer()
+                                    if filename == file {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(.blue)
+                                            .font(.caption)
+                                    }
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 5)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            if file != files.last {
+                                Divider().padding(.leading, 34)
                             }
                         }
-                        .buttonStyle(.plain)
                     }
                 }
-                .listStyle(.plain)
             }
 
             Divider()
@@ -148,19 +159,7 @@ struct S3BrowserView: View {
 
     private var breadcrumb: String {
         if currentPrefix.isEmpty { return "/" }
-        let components = currentPrefix.split(separator: "/")
-        if components.count > 3 {
-            return ".../\(components.suffix(3).joined(separator: "/"))/"
-        }
         return currentPrefix
-    }
-
-    private var folders: [String] {
-        items.filter { $0.hasSuffix("/") }
-    }
-
-    private var files: [String] {
-        items.filter { !$0.hasSuffix("/") }
     }
 
     // MARK: - Navigation
@@ -178,18 +177,28 @@ struct S3BrowserView: View {
     }
 
     private func loadCurrentPrefix() {
+        // Use cache if available
+        if let cached = cache[currentPrefix] {
+            folders = cached.folders
+            files = cached.files
+            errorMessage = nil
+            return
+        }
+
         isLoading = true
         errorMessage = nil
-        items = []
+        folders = []
+        files = []
         Task {
             do {
-                let result = try await awsService.listS3(bucket: bucket, prefix: currentPrefix)
-                items = result
-                isLoading = false
+                let result = try await awsService.listS3Contents(bucket: bucket, prefix: currentPrefix)
+                folders = result.folders
+                files = result.files
+                cache[currentPrefix] = result
             } catch {
                 errorMessage = error.localizedDescription
-                isLoading = false
             }
+            isLoading = false
         }
     }
 }

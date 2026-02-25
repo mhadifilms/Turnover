@@ -119,6 +119,57 @@ public final class AWSCLIService: Sendable {
         }
     }
 
+    /// List folders and files at a prefix using s3api with delimiter for efficient browsing.
+    public func listS3Contents(bucket: String, prefix: String) async throws -> (folders: [String], files: [String]) {
+        var allFolders: [String] = []
+        var allFiles: [String] = []
+        var continuationToken: String?
+
+        repeat {
+            var args = ["aws", "s3api", "list-objects-v2",
+                        "--bucket", bucket,
+                        "--prefix", prefix,
+                        "--delimiter", "/",
+                        "--profile", profile,
+                        "--output", "json"]
+            if let token = continuationToken {
+                args += ["--continuation-token", token]
+            }
+
+            let (stdout, _) = try await runArray(args)
+            guard let data = stdout.data(using: .utf8),
+                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { break }
+
+            // Folders from CommonPrefixes
+            if let prefixes = json["CommonPrefixes"] as? [[String: Any]] {
+                for p in prefixes {
+                    if let full = p["Prefix"] as? String {
+                        let name = String(full.dropFirst(prefix.count))
+                        if !name.isEmpty { allFolders.append(name) }
+                    }
+                }
+            }
+
+            // Files from Contents
+            if let contents = json["Contents"] as? [[String: Any]] {
+                for obj in contents {
+                    if let key = obj["Key"] as? String {
+                        let name = String(key.dropFirst(prefix.count))
+                        if !name.isEmpty && !name.hasSuffix("/") { allFiles.append(name) }
+                    }
+                }
+            }
+
+            if json["IsTruncated"] as? Bool == true {
+                continuationToken = json["NextContinuationToken"] as? String
+            } else {
+                continuationToken = nil
+            }
+        } while continuationToken != nil
+
+        return (allFolders.sorted(), allFiles.sorted())
+    }
+
     public func downloadS3(bucket: String, key: String, to localPath: URL) async throws {
         let s3Path = "s3://\(bucket)/\(key)"
         let _ = try await run("aws", "s3", "cp", s3Path, localPath.path, "--profile", profile)
