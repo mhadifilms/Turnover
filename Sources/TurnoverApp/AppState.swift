@@ -28,6 +28,7 @@ public final class AppState: ObservableObject {
     @AppStorage("enableAudioMuxing") var enableAudioMuxing: Bool = true
     @Published var showFilePicker = false
     @Published var ssoError: String?
+    @Published var availableUpdate: AppRelease?
 
     var selectedColorSpace: ColorSpace {
         get { ColorSpace(rawValue: colorSpaceRawValue) ?? .p3D65PQ }
@@ -56,6 +57,7 @@ public final class AppState: ObservableObject {
 
         loadJobs()
         Task { await checkCredentials() }
+        Task { await checkForUpdates() }
     }
 
     var isAuthenticated: Bool {
@@ -90,6 +92,19 @@ public final class AppState: ObservableObject {
         isCheckingCredentials = true
         credentialStatus = await awsService.checkCredentials()
         isCheckingCredentials = false
+    }
+
+    var currentVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+    }
+
+    func checkForUpdates() async {
+        availableUpdate = await UpdateCheckService.checkForUpdate(currentVersion: currentVersion)
+    }
+
+    func openUpdate() {
+        guard let update = availableUpdate else { return }
+        NSWorkspace.shared.open(update.downloadURL)
     }
 
     func recheckDependencies() {

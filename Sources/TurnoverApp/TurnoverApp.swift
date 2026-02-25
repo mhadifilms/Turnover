@@ -180,6 +180,13 @@ struct MenuBarDropdown: View {
         }
         .keyboardShortcut("n")
 
+        if let update = appState.availableUpdate {
+            Divider()
+            Button("Update to v\(update.version)") {
+                appState.openUpdate()
+            }
+        }
+
         Divider()
 
         Button("Quit") {
