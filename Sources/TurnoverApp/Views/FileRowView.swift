@@ -80,8 +80,8 @@ struct FileRowView: View {
                     .controlSize(.small)
                     .accessibilityLabel("Resolving path")
             case .muxingAudio:
-                Image(systemName: "waveform")
-                    .foregroundStyle(.purple)
+                ProgressView()
+                    .controlSize(.small)
                     .accessibilityLabel("Muxing audio")
             case .taggingColor:
                 Image(systemName: "paintpalette")
@@ -124,8 +124,8 @@ struct FileRowView: View {
                 Text("Resolving S3 path\u{2026}")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            case .muxingAudio:
-                Text("Muxing audio\u{2026}")
+            case .muxingAudio(let detail):
+                Text(detail)
                     .font(.caption)
                     .foregroundStyle(.purple)
             case .taggingColor:

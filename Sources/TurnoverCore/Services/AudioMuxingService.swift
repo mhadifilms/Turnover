@@ -58,7 +58,12 @@ public actor AudioMuxingService {
 
     /// Download audio from S3 plates folder, mux with video, return path to muxed file.
     /// When colorFlags is non-nil, piggybacks color tagging onto the same ffmpeg call.
-    public func muxAudioIfNeeded(job: UploadJob, probeResult: ProbeResult, colorFlags: [String]?) async throws -> URL? {
+    public func muxAudioIfNeeded(
+        job: UploadJob,
+        probeResult: ProbeResult,
+        colorFlags: [String]?,
+        onStep: @Sendable @escaping (String) async -> Void = { _ in }
+    ) async throws -> URL? {
         let (sourceURL, project, parsed) = await MainActor.run { (job.sourceURL, job.project, job.parsed) }
 
         guard let project, let parsed else { return nil }
@@ -67,6 +72,7 @@ public actor AudioMuxingService {
         if probeResult.hasAudioTrack { return nil }
 
         // Find shot folder
+        await onStep("Finding shot folder\u{2026}")
         let shotFolder: String
         do {
             shotFolder = try await resolver.findShotFolder(project: project, shotPrefix: parsed.shotPrefix)
@@ -75,6 +81,7 @@ public actor AudioMuxingService {
         }
 
         // Find WAVs in plates folder
+        await onStep("Searching for audio stems\u{2026}")
         let wavFiles: [String]
         do {
             wavFiles = try await resolver.findPlatesAudio(project: project, shotFolder: shotFolder)
@@ -98,6 +105,7 @@ public actor AudioMuxingService {
             let safeName = URL(fileURLWithPath: mergedWav).lastPathComponent
             let wavKey = "\(project.s3BasePath)/\(shotFolder)/\(project.platesFolder)/\(mergedWav)"
             localAudio = tempDir.appendingPathComponent(safeName)
+            await onStep("Downloading \(safeName)\u{2026}")
             do {
                 try await aws.downloadS3(bucket: project.s3Bucket, key: wavKey, to: localAudio)
             } catch {
@@ -106,10 +114,11 @@ public actor AudioMuxingService {
         } else {
             // Download all stems and merge with ffmpeg amix
             var localWavs: [URL] = []
-            for wav in wavFiles {
+            for (i, wav) in wavFiles.enumerated() {
                 let safeName = URL(fileURLWithPath: wav).lastPathComponent
                 let wavKey = "\(project.s3BasePath)/\(shotFolder)/\(project.platesFolder)/\(wav)"
                 let localWav = tempDir.appendingPathComponent(safeName)
+                await onStep("Downloading stem \(i + 1)/\(wavFiles.count)\u{2026}")
                 do {
                     try await aws.downloadS3(bucket: project.s3Bucket, key: wavKey, to: localWav)
                 } catch {
@@ -118,6 +127,7 @@ public actor AudioMuxingService {
                 localWavs.append(localWav)
             }
 
+            await onStep("Merging \(localWavs.count) stems\u{2026}")
             localAudio = tempDir.appendingPathComponent("merged.wav")
             var mergeArgs = [ffmpeg]
             for wav in localWavs {
@@ -136,6 +146,7 @@ public actor AudioMuxingService {
         }
 
         // Mux video + audio — save next to the original with _review suffix
+        await onStep("Muxing audio into video\u{2026}")
         let baseName = sourceURL.deletingPathExtension().lastPathComponent
         let ext = sourceURL.pathExtension
         let outputURL = sourceURL.deletingLastPathComponent().appendingPathComponent("\(baseName)_review.\(ext)")

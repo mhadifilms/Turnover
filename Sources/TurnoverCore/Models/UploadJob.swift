@@ -3,7 +3,7 @@ import Foundation
 public enum UploadStatus: Sendable, Equatable {
     case pending
     case resolvingPath
-    case muxingAudio
+    case muxingAudio(String = "Preparing\u{2026}")
     case taggingColor
     case tagged
     case uploading(progress: Double)

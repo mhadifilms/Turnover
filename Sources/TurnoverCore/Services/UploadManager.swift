@@ -171,12 +171,13 @@ public final class UploadManager: ObservableObject {
         var didMux = false
         var muxError: String?
         if enableAudioMuxing {
-            await MainActor.run { job.status = .muxingAudio }
+            await MainActor.run { job.status = .muxingAudio("Probing file\u{2026}") }
             do {
                 if let muxedURL = try await audioMuxer.muxAudioIfNeeded(
                     job: job,
                     probeResult: probeResult,
-                    colorFlags: needsColorTag ? colorFlags : nil
+                    colorFlags: needsColorTag ? colorFlags : nil,
+                    onStep: { step in await MainActor.run { job.status = .muxingAudio(step) } }
                 ) {
                     await MainActor.run { job.muxedFileURL = muxedURL }
                     didMux = true
