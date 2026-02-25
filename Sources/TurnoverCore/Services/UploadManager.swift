@@ -131,6 +131,16 @@ public final class UploadManager: ObservableObject {
         enableAudioMuxing: Bool
     ) async {
         let fileName = await MainActor.run { job.fileName }
+        let isSequence = await MainActor.run { job.isSequence }
+        let parsed = await MainActor.run { job.parsed }
+        let isVideo = parsed?.isVideo ?? false
+
+        // Non-video files (sequences, images, etc.) skip tagging — just mark as ready
+        if isSequence || !isVideo {
+            log("[Tag] \(fileName): non-video file — skipping tagging")
+            await MainActor.run { job.status = .tagged }
+            return
+        }
 
         // 1. Probe file (ONE ffprobe call)
         let sourceURL = await MainActor.run { job.sourceURL }
@@ -210,6 +220,19 @@ public final class UploadManager: ObservableObject {
         aws: AWSCLIService
     ) async {
         await MainActor.run { job.status = .uploading(progress: -1) }
+        let isSequence = await MainActor.run { job.isSequence }
+
+        if isSequence {
+            await uploadSequence(job, aws: aws)
+        } else {
+            await uploadSingleFile(job, aws: aws)
+        }
+    }
+
+    nonisolated private static func uploadSingleFile(
+        _ job: UploadJob,
+        aws: AWSCLIService
+    ) async {
         let (project, fileToUpload, sourceURL, s3Path, colorSpace) = await MainActor.run {
             (job.project, job.fileToUpload, job.sourceURL, job.s3DestinationPath, job.colorSpace)
         }
@@ -246,5 +269,51 @@ public final class UploadManager: ObservableObject {
         } catch {
             await MainActor.run { job.status = .failed(error.localizedDescription) }
         }
+    }
+
+    nonisolated private static func uploadSequence(
+        _ job: UploadJob,
+        aws: AWSCLIService
+    ) async {
+        let (project, sequenceURLs, s3BasePath) = await MainActor.run {
+            (job.project, job.sequenceURLs, job.s3DestinationPath)
+        }
+
+        guard let project else {
+            await MainActor.run { job.status = .failed("No project assigned") }
+            return
+        }
+
+        let total = sequenceURLs.count
+        log("[Upload] Sequence \(s3BasePath) — \(total) frames")
+
+        for (index, frameURL) in sequenceURLs.enumerated() {
+            let frameName = frameURL.lastPathComponent
+            let s3Key = "\(s3BasePath)/\(frameName)"
+
+            do {
+                try await aws.conditionalUploadS3(
+                    localPath: frameURL,
+                    bucket: project.s3Bucket,
+                    key: s3Key
+                )
+                let progress = Double(index + 1) / Double(total)
+                await MainActor.run { job.status = .uploading(progress: progress) }
+                log("[Upload] Frame \(index + 1)/\(total): \(frameName)")
+            } catch let error as ProcessError {
+                if error.stderr.contains("PreconditionFailed") || error.stderr.contains("412") {
+                    await MainActor.run { job.status = .failed("Frame \(frameName) already exists on S3") }
+                } else {
+                    await MainActor.run { job.status = .failed("Frame \(frameName): \(error.localizedDescription)") }
+                }
+                return
+            } catch {
+                await MainActor.run { job.status = .failed("Frame \(frameName): \(error.localizedDescription)") }
+                return
+            }
+        }
+
+        log("[Upload] Sequence complete: \(total) frames uploaded")
+        await MainActor.run { job.status = .completed }
     }
 }

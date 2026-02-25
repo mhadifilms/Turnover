@@ -18,6 +18,11 @@ struct FileRowView: View {
                     Text(job.fileName)
                         .font(.system(.body, design: .monospaced))
                         .lineLimit(1)
+                    if job.isSequence {
+                        Text("\(job.frameCount) frames")
+                            .font(.caption)
+                            .foregroundStyle(.purple)
+                    }
                     if !job.s3DestinationPath.isEmpty {
                         Text(abbreviatedPath(job.s3DestinationPath))
                             .font(.caption)

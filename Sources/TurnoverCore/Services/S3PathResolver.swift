@@ -15,6 +15,7 @@ public actor S3PathResolver {
     public func resolve(job: UploadJob) async throws -> String {
         let parsed = await MainActor.run { job.parsed }
         let project = await MainActor.run { job.project }
+        let isSequence = await MainActor.run { job.isSequence }
         guard let parsed, let project else {
             throw ResolverError.cannotParse
         }
@@ -30,9 +31,16 @@ public actor S3PathResolver {
 
         // shotFolder looks like "MyShow_202_103_comp/" or "MYSHOW_205_001_na/"
         let folder = shotFolder.hasSuffix("/") ? String(shotFolder.dropLast()) : shotFolder
-        // Use the actual folder name from S3 for the path, but our filename for the uploaded file
-        let destKey = "\(project.s3BasePath)/\(folder)/\(project.vfxFolder)/\(parsed.shotPrefix)_\(parsed.suffix)_\(parsed.version).\(parsed.fileExtension)"
-        return destKey
+
+        if isSequence {
+            // For sequences, the dest path is the folder where frames go
+            // Each frame uploaded as: basePath/shotFolder/vfxFolder/baseName/frame.exr
+            let destKey = "\(project.s3BasePath)/\(folder)/\(project.vfxFolder)/\(parsed.sequenceBaseName)"
+            return destKey
+        } else {
+            let destKey = "\(project.s3BasePath)/\(folder)/\(project.vfxFolder)/\(parsed.shotPrefix)_\(parsed.suffix)_\(parsed.version).\(parsed.fileExtension)"
+            return destKey
+        }
     }
 
     /// Find WAV files in the shot's plates folder on S3.

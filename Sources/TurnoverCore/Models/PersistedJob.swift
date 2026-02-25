@@ -12,6 +12,8 @@ public struct PersistedJob: Codable, Sendable {
     public let failureMessage: String?
     public let muxedFileURL: URL?
     public let taggedFileURL: URL?
+    public let sequenceURLs: [URL]?
+    public let frameRange: String?
 
     public enum PersistedStatus: String, Codable, Sendable {
         case pending, tagged, completed, failed
@@ -29,6 +31,8 @@ public struct PersistedJob: Codable, Sendable {
 
         self.muxedFileURL = job.muxedFileURL
         self.taggedFileURL = job.taggedFileURL
+        self.sequenceURLs = job.isSequence ? job.sequenceURLs : nil
+        self.frameRange = job.frameRange
 
         switch job.status {
         case .completed:
@@ -49,7 +53,16 @@ public struct PersistedJob: Codable, Sendable {
 
     @MainActor
     public func toUploadJob() -> UploadJob {
-        let job = UploadJob(sourceURL: sourceURL, id: id)
+        let job: UploadJob
+
+        // Restore as sequence or single file
+        if let seqURLs = sequenceURLs, !seqURLs.isEmpty,
+           let range = frameRange,
+           let parsed = FileNameParser.parse(fileName: seqURLs.first!.lastPathComponent) {
+            job = UploadJob(sequenceURLs: seqURLs, baseName: parsed.sequenceBaseName, frameRange: range, parsed: parsed, id: id)
+        } else {
+            job = UploadJob(sourceURL: sourceURL, id: id)
+        }
 
         // Restore project: try by ID first, fall back to episode number
         if let pid = projectID, let project = ProjectStore.find(byID: pid) {
@@ -73,7 +86,7 @@ public struct PersistedJob: Codable, Sendable {
         case .completed:
             job.status = .completed
         case .tagged:
-            if job.muxedFileURL == nil && job.taggedFileURL == nil {
+            if job.muxedFileURL == nil && job.taggedFileURL == nil && !job.isSequence {
                 job.status = .pending
             } else {
                 job.status = .tagged

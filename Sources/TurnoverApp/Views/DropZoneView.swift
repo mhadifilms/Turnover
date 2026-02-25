@@ -13,7 +13,7 @@ struct DropZoneView: View {
                 .foregroundStyle(isTargeted ? .blue : .secondary)
                 .accessibilityHidden(true)
 
-            Text("Drop VFX renders here")
+            Text("Drop files or folders here")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
@@ -21,7 +21,7 @@ struct DropZoneView: View {
             Button("Choose Files\u{2026}") { appState.showFilePicker = true }
                 .buttonStyle(.bordered)
                 .accessibilityLabel("Choose files to upload")
-                .accessibilityHint("Opens a file picker to select VFX render files")
+                .accessibilityHint("Opens a file picker to select render files")
         }
         .frame(maxWidth: .infinity)
         .padding(24)
@@ -39,7 +39,7 @@ struct DropZoneView: View {
         }
         .fileImporter(
             isPresented: $appState.showFilePicker,
-            allowedContentTypes: [.movie, .quickTimeMovie, .mpeg4Movie, .video],
+            allowedContentTypes: [.item, .folder],
             allowsMultipleSelection: true
         ) { result in
             if case .success(let urls) = result {

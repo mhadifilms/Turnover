@@ -6,36 +6,43 @@ struct CredentialView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "lock.shield")
-                .font(.system(size: 40))
+            if appState.isCheckingCredentials {
+                ProgressView()
+                    .controlSize(.large)
+                Text("Checking credentials\u{2026}")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.secondary)
+
+                Text("AWS SSO Sign-In Required")
+                    .font(.headline)
+
+                statusText
+
+                if let ssoError = appState.ssoError {
+                    Label(ssoError, systemImage: "xmark.circle")
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                }
+
+                Button(action: { appState.ssoLogin() }) {
+                    Label("Sign In with SSO", systemImage: "arrow.right.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityLabel("Sign in with AWS SSO")
+                .accessibilityHint("Opens browser for authentication")
+
+                Button("Check Again") {
+                    Task { await appState.checkCredentials() }
+                }
+                .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-
-            Text("AWS SSO Sign-In Required")
-                .font(.headline)
-
-            statusText
-
-            if let ssoError = appState.ssoError {
-                Label(ssoError, systemImage: "xmark.circle")
-                    .foregroundStyle(.red)
-                    .font(.caption)
+                .font(.caption)
+                .accessibilityLabel("Check credentials again")
             }
-
-            Button(action: { appState.ssoLogin() }) {
-                Label("Sign In with SSO", systemImage: "arrow.right.circle")
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(appState.isCheckingCredentials)
-            .accessibilityLabel("Sign in with AWS SSO")
-            .accessibilityHint("Opens browser for authentication")
-
-            Button("Check Again") {
-                Task { await appState.checkCredentials() }
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .font(.caption)
-            .accessibilityLabel("Check credentials again")
         }
         .padding(24)
         .frame(maxWidth: .infinity)

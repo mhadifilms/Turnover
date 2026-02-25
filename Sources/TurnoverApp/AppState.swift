@@ -22,7 +22,7 @@ public final class AppState: ObservableObject {
     @Published var setupOutput: String = ""
     @Published var setupError: String?
     @Published var credentialStatus: AWSCredentialStatus = .expired
-    @Published var isCheckingCredentials = false
+    @Published var isCheckingCredentials = true
     @Published var jobs: [UploadJob] = []
     @AppStorage("defaultColorSpace") private var colorSpaceRawValue: String = ColorSpace.p3D65PQ.rawValue
     @AppStorage("enableAudioMuxing") var enableAudioMuxing: Bool = true
@@ -155,10 +155,12 @@ public final class AppState: ObservableObject {
     }
 
     func openSSOConfigInTerminal() {
+        let awsPath = DependencyCheck.findExecutable("aws") ?? "aws"
         let script = """
         tell application "Terminal"
             activate
-            do script "aws configure sso"
+            delay 0.5
+            do script "\(awsPath) configure sso"
         end tell
         """
         if let appleScript = NSAppleScript(source: script) {
@@ -181,14 +183,60 @@ public final class AppState: ObservableObject {
 
     func addFiles(urls: [URL]) {
         let defaultCS = selectedColorSpace
-        let newJobs = urls.map { url -> UploadJob in
-            let job = UploadJob(sourceURL: url)
-            // Apply default color space when no project override
-            if job.project == nil {
-                job.colorSpace = defaultCS
+        var allURLs: [URL] = []
+
+        // Expand folders into their contents
+        let fm = FileManager.default
+        for url in urls {
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                if let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
+                    allURLs.append(contentsOf: contents)
+                }
+            } else {
+                allURLs.append(url)
             }
-            return job
         }
+
+        // Parse all files — only accept files matching the naming convention
+        var sequenceFrames: [String: (parsed: ParsedFileName, urls: [URL])] = [:]
+        var singleFiles: [URL] = []
+
+        for url in allURLs {
+            guard let parsed = FileNameParser.parse(fileName: url.lastPathComponent) else { continue }
+            if parsed.isSequenceFrame {
+                // Group frames by sequence base name + extension
+                let key = "\(parsed.sequenceBaseName).\(parsed.fileExtension)"
+                if sequenceFrames[key] == nil {
+                    sequenceFrames[key] = (parsed: parsed, urls: [])
+                }
+                sequenceFrames[key]!.urls.append(url)
+            } else {
+                singleFiles.append(url)
+            }
+        }
+
+        var newJobs: [UploadJob] = []
+
+        // Create sequence jobs
+        for (key, seq) in sequenceFrames {
+            let sorted = seq.urls.sorted { $0.lastPathComponent < $1.lastPathComponent }
+            let frames = sorted.compactMap { FileNameParser.parse(fileName: $0.lastPathComponent)?.frameNumber }
+            let range = frames.isEmpty ? "?" : "\(frames.first!)-\(frames.last!)"
+            let baseName = seq.parsed.sequenceBaseName
+
+            let job = UploadJob(sequenceURLs: sorted, baseName: baseName, frameRange: range, parsed: seq.parsed)
+            if job.project == nil { job.colorSpace = defaultCS }
+            newJobs.append(job)
+        }
+
+        // Create single-file jobs
+        for url in singleFiles {
+            let job = UploadJob(sourceURL: url)
+            if job.project == nil { job.colorSpace = defaultCS }
+            newJobs.append(job)
+        }
+
         jobs.append(contentsOf: newJobs)
 
         for job in newJobs {
